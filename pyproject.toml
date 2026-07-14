@@ -1,0 +1,21 @@
+[project]
+name = "sb-cc-cb-reader"
+version = "0.1.0"
+description = "MuPDF-backed reader for SB/CC/CB — navigate verse-by-verse translation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.1",
+    "pymupdf>=1.28.0",
+    "pyqt6>=6.11.0",
+]
+
+[project.scripts]
+sbreader = "reader:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+include = ["reader.py"]

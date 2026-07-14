@@ -1,0 +1,159 @@
+# SB · CC · CB Reader
+
+A desktop reader for `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf` — the same navigation
+model as the Android app, built on the same engine (MuPDF, via PyMuPDF).
+
+Runs on macOS and Linux.
+
+## The PDF
+
+The book itself (`SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf`, ~538 MB) is **not** in
+this repo — it is far past GitHub's file-size limit. Download it and drop it in
+the project root next to `reader.py`:
+
+<https://drive.google.com/file/d/186cFWCiBbdWzaIP6EMdEyM1cqCSW-qX5/view?usp=drive_link>
+
+## Run
+
+```sh
+uv run python reader.py
+```
+
+Point it at a different PDF, or the file elsewhere, with
+`uv run python reader.py /path/to/SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf`.
+
+First launch builds a translation index from the PDF outline (~2 s) and caches it
+to `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.index.json`; later launches read the cache.
+Your last page is remembered in `*.state.json` and restored on the next run.
+
+## Keys
+
+Forward is **down / right**.
+
+| Key | Action |
+| --- | --- |
+| `↓` | **next** translation |
+| `↑` | previous translation |
+| `→` | **next** page |
+| `←` | previous page |
+| mouse wheel | scroll within the page |
+| `Enter` | **random** translation |
+| `s` | aim navigation at the **sloka** instead of the translation |
+| `Space` / `PgDn` | one page forward |
+| `PgUp` | one page back |
+| `t` | theme picker |
+| `1`…`9` | pick a theme directly |
+| `⌘.` / `⌘,` | brighter / dimmer |
+| `i` | show / hide the status bar (hidden by default) |
+| `g` or `/` | jump to a verse |
+| `w` | fit to width |
+| `h` | fit to height |
+| `c` | centre the page horizontally |
+| `+` / `−` | zoom in / out |
+| `0` | fit to width (same as `w`) |
+| `f` | fullscreen |
+| `Home` / `End` | first / last page |
+| `q` / `Esc` | quit |
+
+Up/Down step verse-to-verse (by translation, or by sloka with `s` on); Left/Right
+step one page at a time. Holding any arrow auto-repeats, so you can hold to run
+through verses or pages. Within a tall page, scroll with the mouse wheel — the
+scrollbars are hidden.
+
+`w` and `h` are sticky: the page keeps re-fitting as you resize the window and
+as you move between pages. Page heights in this PDF vary a lot (370–1035 pt at a
+constant 429 pt width), so fit-height re-scales noticeably page to page while
+fit-width stays put. `+`/`−` resumes from whatever is currently on screen rather
+than snapping to some other scale, and drops you into free-zoom. The mode is
+remembered between runs.
+
+## Sloka mode
+
+`s` toggles what up/down (and `Enter`) aim at: the **translation** (default)
+or the **sloka**. The status bar shows `SLOKA` while it's on, and the mode is
+remembered between runs.
+
+This only changes anything for **SB**, where the verse sits on its own page,
+immediately after the translation:
+
+```
+p.9   breakup slides
+p.10  TRANSLATION   <- default target
+p.11  SLOKA         <- target with 's' on
+p.12+ PURPORT [1/32], [2/32], ...
+```
+
+**CC and CB print the verse and its translation on the same page**, so there
+both modes land identically and `s` is a no-op — which is what you'd expect.
+All 13,004 SB entries are offset by +1; all 23,133 CC/CB entries are not.
+
+## Colours
+
+Nine themes, each with eight brightness steps. Press `t` for the picker, or hit
+the number key directly.
+
+| # | Theme | Page | Letters |
+| --- | --- | --- | --- |
+| 1 | Normal *(default)* | white | black |
+| 2 | Inverted | dark | white |
+| 3 | Green | green | black |
+| 4 | Orange | orange | black |
+| 5 | Solarized | `#fdf6e3` base3 | `#657b83` base00 |
+| 6 | Solar Dark | `#002b36` base03 | `#839496` base0 |
+| 7 | Monokai | `#272822` | `#f8f8f2` |
+| 8 | Mariana | `#343d46` | `#d8dee9` |
+| 9 | Sepia | `#f4ecd8` | black |
+
+Monokai is Sublime Text's classic default scheme; Mariana is its newer one.
+
+Brightness is separate from the theme: `⌘.` brightens, `⌘,` dims, clamping at
+either end (Linux: `Ctrl`). Changing theme keeps your brightness rather than
+resetting it. The current state shows in the status bar (`Monokai · 3/8`) and is
+remembered between runs.
+
+In the picker, arrowing through the list **previews each theme live** on the
+page behind it; `Enter` commits, `Esc` puts back what you had.
+
+Each theme is an *ink → paper* ramp applied per channel: source black becomes
+`ink`, source white becomes `paper`, everything between interpolates. Doing it
+per channel rather than off a single luminance keeps the page's own colour, so
+the gold headings tint along instead of flattening to grey. (For the black-ink
+themes this is exactly a multiply by the paper colour.) Solarized needs the
+`ink` term because its text is a slate grey, not black.
+
+Contrast narrows at the dim end — sharpest for Green 8/8 and Orange 8/8, where
+the paper darkens while the letters stay pure black. Widen the range by raising
+the last value of `DIM_LEVELS` in `reader.py`; the palettes themselves are the
+`THEMES` tuple right above it, and adding another is one more line.
+
+## Jump to a verse
+
+Press `g`, then type a reference — matching is substring-based across all
+36,137 verses, so partial input is fine:
+
+```
+SB 1.1.1        Madhya 20.268        CBAdi 10.112        Antya 4.168
+```
+
+`↑`/`↓` to pick, `Enter` to go, `Esc` to dismiss.
+
+## How "next translation" works
+
+The PDF is a slideshow: 237,298 pages, where a single verse spans ~40 of them
+(breakup slides → translation → sloka → purport slides `[1/32]`, `[2/32]`…).
+
+Its outline has four levels, and **level 4 is exactly the translation page** of
+each verse:
+
+```
+L1  Canto 1: Creation
+L2  SB 1.1: Questions by the Sages
+L3    (BR)--- SB 1.1.1 / 23     <- (BR) = breakup slides       p.9
+L4    --- SB 1.1.1 / 23         <- ENGLISH TRANSLATION         p.10
+L3    PURPORT                                                  p.12
+```
+
+So the reader pulls all 36,137 level-4 entries, sorts them by page, and a tap
+does a binary search for the next one. Level 1/2 headings ride along as the
+chapter shown in the status bar. Covers SB, CC (Adi/Madhya/Antya) and CB
+(CBAdi/CBMad/CBAnt).

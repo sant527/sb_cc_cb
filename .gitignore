@@ -1,0 +1,13 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf
+*.index.json
+*.state.json
