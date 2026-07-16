@@ -26,6 +26,8 @@ SEP = " // "         # separator between side-by-side transliteration padas
 SEP_FONT = "times-italic"
 SEP_COLOR = (0.12, 0.12, 0.12)
 
+CLIP_EDGE_PAD = 4.0  # top/bottom padding for the first/last Devanagari clip
+
 
 def classify_lines(page):
     """Group spans into visual lines; return (devanagari_bboxes, translit_bboxes)."""
@@ -98,6 +100,19 @@ def _rows_for(deva, padas):
     return None
 
 
+def expand_deva(deva):
+    """Grow each Devanagari clip vertically to the midpoint of the gap to its
+    neighbours. The reported metric box omits below-baseline vowel marks (worst
+    in RM Devanagari, canto 10), so clipping to it slices descenders; tiling the
+    inter-line gaps captures the full glyph without grabbing the next line."""
+    out = []
+    for i, bb in enumerate(deva):
+        top = (deva[i - 1].y1 + bb.y0) / 2 if i > 0 else bb.y0 - CLIP_EDGE_PAD
+        bot = (bb.y1 + deva[i + 1].y0) / 2 if i < len(deva) - 1 else bb.y1 + CLIP_EDGE_PAD
+        out.append(fitz.Rect(bb.x0, top, bb.x1, bot))
+    return out
+
+
 def verse_rows(deva, tl):
     """Ordered rows for the interleaved verse, or None if not cleanly pairable.
 
@@ -147,6 +162,7 @@ def draw_interleaved(new, src, pno):
     page = src[pno]
     W, H = page.rect.width, page.rect.height
     deva, tl = classify_lines(page)
+    deva = expand_deva(deva)                     # capture full Devanagari ink
     rows = verse_rows(deva, tl)
     if rows is None:
         return False
