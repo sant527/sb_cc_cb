@@ -579,9 +579,11 @@ class ScopePicker(QDialog):
             | QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Reset).setText("All")
+        buttons.button(QDialogButtonBox.StandardButton.Reset).clicked.connect(self._all)
+        none_btn = buttons.addButton("None", QDialogButtonBox.ButtonRole.ActionRole)
+        none_btn.clicked.connect(self._none)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        buttons.button(QDialogButtonBox.StandardButton.Reset).clicked.connect(self._all)
 
         lay = QVBoxLayout(self)
         lay.addWidget(QLabel("Enter picks a random verse from:"))
@@ -591,6 +593,10 @@ class ScopePicker(QDialog):
     def _all(self) -> None:
         for it in self.leaves.values():
             it.setCheckState(0, Qt.CheckState.Checked)
+
+    def _none(self) -> None:
+        for it in self.leaves.values():
+            it.setCheckState(0, Qt.CheckState.Unchecked)
 
     def set_scope(self, scope: set[str]) -> None:
         for key, it in self.leaves.items():
