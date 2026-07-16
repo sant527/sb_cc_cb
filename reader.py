@@ -565,7 +565,15 @@ class Reader(QMainWindow):
         self._save_soon.start(600)
 
     def step_page(self, delta: int) -> None:
-        self.goto(self.page + delta)
+        # Interleaved pages sit at the tail, not physically by their sloka. When
+        # paging off one, step into the original sequence as if it lived right
+        # after its sloka page (so right -> purport, left -> the sloka page).
+        i = self.index.inter_to_i.get(self.page)
+        if i is not None:
+            base = self.index.entries[i].sloka
+            self.goto(base + (delta if delta > 0 else delta + 1))
+        else:
+            self.goto(self.page + delta)
 
     # -- colour ladder ------------------------------------------------------
 
