@@ -11,3 +11,7 @@ wheels/
 SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf
 *.index.json
 *.state.json
+interleaved_sample.pdf
+SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_interleaved.pdf
+*.pages.json
+.interleaved_pages.pdf

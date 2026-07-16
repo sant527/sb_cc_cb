@@ -43,6 +43,8 @@ PDF_NAME = "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf"
 
 ZOOM_MIN, ZOOM_MAX = 0.4, 6.0
 
+MODE_NAMES = ("Translation", "Sloka", "Interleaved")   # nav modes cycled by `s`
+
 
 # --------------------------------------------------------------------------
 # Colour ladder  (UP = dimmer, rolls into the next theme; DOWN = reverse; wraps)
@@ -126,10 +128,11 @@ def readable(title: str) -> str:
 
 @dataclass(slots=True)
 class Translation:
-    page: int      # 1-based; the English translation
-    label: str     # "SB 1.1.1 / 23"
-    chapter: str   # "SB 1.1: Questions by the Sages"
-    sloka: int     # the verse itself
+    page: int          # 1-based; the English translation
+    label: str         # "SB 1.1.1 / 23"
+    chapter: str       # "SB 1.1: Questions by the Sages"
+    sloka: int         # the verse itself
+    interleaved: int = -1   # the added interleaved page, or -1 if none
 
     @staticmethod
     def sloka_page(label: str, page: int) -> int:
@@ -149,7 +152,9 @@ class Index:
     def __init__(self, entries: list[Translation]) -> None:
         self.entries = entries
         self.pages = [e.page for e in entries]           # sorted, for bisect
-        self.slokas = sorted(e.sloka for e in entries)   # the 's' navigation target
+        # interleaved pages live at the tail of the PDF -> explicit page->verse map
+        self.inter_to_i = {e.interleaved: i for i, e in enumerate(entries)
+                           if e.interleaved > 0}
 
     # -- build / cache ------------------------------------------------------
 
@@ -176,6 +181,16 @@ class Index:
 
     @classmethod
     def load(cls, pdf: Path, doc: fitz.Document) -> "Index":
+        # the build script writes a richer sidecar (with interleaved pages);
+        # prefer it when present.
+        side = pdf.with_suffix(".pages.json")
+        if side.exists():
+            try:
+                blob = json.loads(side.read_text())
+                return cls([Translation(*row) for row in blob["entries"]])
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+
         cache = pdf.with_suffix(".index.json")
         stat = pdf.stat()
         stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 3}
@@ -197,25 +212,39 @@ class Index:
 
     # -- queries ------------------------------------------------------------
 
-    def targets(self, sloka: bool) -> list[int]:
-        return self.slokas if sloka else self.pages
-
-    def next_after(self, page: int, sloka: bool = False) -> int | None:
-        """First target strictly after `page`."""
-        t = self.targets(sloka)
-        i = bisect.bisect_right(t, page)
-        return t[i] if i < len(t) else None
-
-    def prev_before(self, page: int, sloka: bool = False) -> int | None:
-        """Last target strictly before `page`."""
-        t = self.targets(sloka)
-        i = bisect.bisect_left(t, page)
-        return t[i - 1] if i > 0 else None
-
     def at_or_before(self, page: int) -> Translation | None:
         """The verse whose section `page` falls inside — for the status bar."""
+        i = self.verse_at(page)
+        return self.entries[i] if i is not None else None
+
+    # -- verse + mode navigation -------------------------------------------
+
+    def verse_at(self, page: int) -> int | None:
+        """Index of the verse `page` belongs to (handles tail interleaved pages)."""
+        if page in self.inter_to_i:
+            return self.inter_to_i[page]
         i = bisect.bisect_right(self.pages, page)
-        return self.entries[i - 1] if i > 0 else None
+        return i - 1 if i > 0 else None
+
+    def mode_page(self, i: int, mode: int) -> int:
+        """Page for verse i in a given mode (0=translation, 1=sloka, 2=interleaved),
+        falling back when that mode isn't available for the verse."""
+        e = self.entries[i]
+        if mode == 2 and e.interleaved > 0:
+            return e.interleaved
+        if mode >= 1:
+            return e.sloka        # == translation page for CC/CB
+        return e.page
+
+    def modes_for(self, i: int) -> list[int]:
+        """Which of translation/sloka/interleaved are meaningfully distinct here."""
+        e = self.entries[i]
+        m = [0]
+        if e.sloka != e.page:
+            m.append(1)
+        if e.interleaved > 0:
+            m.append(2)
+        return m
 
     def search(self, query: str, limit: int = 200) -> list[Translation]:
         q = query.lower().strip()
@@ -481,7 +510,7 @@ class Reader(QMainWindow):
         self.index = Index.load(pdf, self.doc)
         self.state_file = pdf.with_suffix(".state.json")
         (self.page, self.theme_i, self.dim_i, mode, zoom,
-         show_bar, self.sloka) = self._restore()
+         show_bar, self.nav_mode) = self._restore()
 
         self.view = PageView(self.doc)
         self.view.mode, self.view.zoom = mode, zoom
@@ -510,7 +539,7 @@ class Reader(QMainWindow):
         self.setCentralWidget(central)
 
         self.palette_ = JumpPalette(self.index)
-        self.palette_.chosen.connect(self.goto)
+        self.palette_.chosen.connect(self._jump)
 
         self.themes = ThemePalette()
         self.themes.previewed.connect(lambda i: self.set_theme(i, flash=False))
@@ -561,43 +590,66 @@ class Reader(QMainWindow):
         self._flash(f"{THEMES[self.theme_i].name} · {self.dim_i + 1}/{len(DIM_LEVELS)}")
         self._save_soon.start(600)
 
+    def _current_verse(self) -> int | None:
+        return self.index.verse_at(self.page)
+
+    def _jump(self, page: int) -> None:
+        """Jump palette chose a verse (by its translation page) -> honour nav mode."""
+        i = self.index.verse_at(page)
+        self.goto(self.index.mode_page(i, self.nav_mode) if i is not None else page)
+
     def step_translation(self, delta: int) -> None:
-        target = (self.index.next_after(self.page, self.sloka) if delta > 0
-                  else self.index.prev_before(self.page, self.sloka))
-        if target is None:
+        """Move one verse forward/back, staying in the current nav mode."""
+        i = self._current_verse()
+        if i is None:
+            i = -1 if delta > 0 else len(self.index.entries)
+        j = i + delta
+        if not 0 <= j < len(self.index.entries):
             self._flash("Start of book" if delta < 0 else "End of book")
             return
-        self.goto(target)
+        self.goto(self.index.mode_page(j, self.nav_mode))
 
-    def toggle_sloka(self) -> None:
-        """Aim left/right at the sloka instead of the translation.
-
-        Only changes anything for SB, where the sloka is its own page. CC and CB
-        print verse and translation together, so there both modes land alike.
-        """
-        self.sloka = not self.sloka
-        self._flash("Sloka" if self.sloka else "Translation")
+    def cycle_mode(self) -> None:
+        """s -> cycle translation / sloka / interleaved for the current verse,
+        skipping modes this verse doesn't have."""
+        i = self._current_verse()
+        if i is None:
+            return
+        avail = self.index.modes_for(i)
+        order = (0, 1, 2)
+        start = order.index(self.nav_mode)
+        for step in range(1, 4):
+            cand = order[(start + step) % 3]
+            if cand in avail:
+                self.nav_mode = cand
+                break
+        self.goto(self.index.mode_page(i, self.nav_mode))
+        self._flash(MODE_NAMES[self.nav_mode])
         self._save_soon.start(600)
 
     def random_translation(self) -> None:
-        """Enter -> land on a random verse, honouring the current target."""
-        e = random.choice(self.index.entries)
-        target = e.sloka if self.sloka else e.page
-        if len(self.index.entries) > 1 and target == self.page:
-            e = random.choice(self.index.entries)   # one retry; don't sit still
-            target = e.sloka if self.sloka else e.page
-        self.goto(target)
+        """Enter -> a random verse, in the current nav mode."""
+        i = random.randrange(len(self.index.entries))
+        self.goto(self.index.mode_page(i, self.nav_mode))
         self._flash("Random")
 
     def _sync_status(self, note: str = "") -> None:
-        e = self.index.at_or_before(self.page)
+        i = self._current_verse()
+        e = self.index.entries[i] if i is not None else None
         here = f"<b style='color:#f0f0f0'>{e.label}</b> &nbsp;·&nbsp; {e.chapter}" if e else "—"
-        off = f" <span style='color:#777'>(+{self.page - e.page})</span>" if e and self.page > e.page else ""
+        role, off = "", ""
+        if e:
+            if self.page == e.interleaved:
+                role = "INTERLEAVED"
+            elif e.sloka != e.page and self.page == e.sloka:
+                role = "SLOKA"
+            elif self.page > e.page:
+                off = f" <span style='color:#777'>(+{self.page - e.page})</span>"
         tail = f" &nbsp; <span style='color:#e0b050'>{note}</span>" if note else ""
         self.status_left.setText(here + off + tail)
-        mode = ("<span style='color:#e0b050'>SLOKA</span> &nbsp; " if self.sloka else "")
+        badge = f"<span style='color:#e0b050'>{role}</span> &nbsp; " if role else ""
         self.status_right.setText(
-            f"{mode}<span style='color:#777'>page</span> "
+            f"{badge}<span style='color:#777'>page</span> "
             f"{self.page:,} / {self.doc.page_count:,}"
         )
 
@@ -607,7 +659,7 @@ class Reader(QMainWindow):
 
     # -- persistence --------------------------------------------------------
 
-    def _restore(self) -> tuple[int, int, int, str, float, bool, bool]:
+    def _restore(self) -> tuple[int, int, int, str, float, bool, int]:
         try:
             blob = json.loads(self.state_file.read_text())
             page = int(blob["page"])
@@ -619,15 +671,19 @@ class Reader(QMainWindow):
                 dim_i = int(blob.get("dim", 0))
             theme_i = theme_i % len(THEMES)
             dim_i = min(len(DIM_LEVELS) - 1, max(0, dim_i))
-            mode = blob.get("mode", "width")
-            if mode not in ("width", "height", "zoom"):
-                mode = "width"
+            fit = blob.get("fit", blob.get("mode", "width"))
+            if fit not in ("width", "height", "zoom"):
+                fit = "width"
             zoom = min(ZOOM_MAX, max(ZOOM_MIN, float(blob.get("zoom", 1.0))))
-            return (page, theme_i, dim_i, mode, zoom,
-                    bool(blob.get("bar", False)), bool(blob.get("sloka", False)))
+            if "nav" in blob:
+                nav = int(blob["nav"])
+            else:
+                nav = 1 if blob.get("sloka") else 0    # migrate old sloka bool
+            nav = nav if nav in (0, 1, 2) else 0
+            return (page, theme_i, dim_i, fit, zoom, bool(blob.get("bar", False)), nav)
         except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
             # page 1, Normal at full brightness, fit width, bar hidden, translation mode
-            return 1, 0, 0, "width", 1.0, False, False
+            return 1, 0, 0, "width", 1.0, False, 0
 
     def _save(self) -> None:
         try:
@@ -635,10 +691,10 @@ class Reader(QMainWindow):
                 "page": self.page,
                 "theme": self.theme_i,
                 "dim": self.dim_i,
-                "mode": self.view.mode,
+                "fit": self.view.mode,
                 "zoom": self.view.zoom,
                 "bar": self.bar.isVisible(),
-                "sloka": self.sloka,
+                "nav": self.nav_mode,
             }))
         except OSError:
             pass
@@ -687,7 +743,7 @@ class Reader(QMainWindow):
             case Qt.Key.Key_C:
                 self.view.centre_h()
             case Qt.Key.Key_S:
-                self.toggle_sloka()
+                self.cycle_mode()
             case Qt.Key.Key_T:
                 self.themes.move(self.geometry().center() - self.themes.rect().center())
                 self.themes.open(self.theme_i)
@@ -730,7 +786,13 @@ class Reader(QMainWindow):
 
 
 def main() -> int:
-    pdf = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).parent / PDF_NAME
+    if len(sys.argv) > 1:
+        pdf = Path(sys.argv[1])
+    else:
+        # prefer the interleaved build (with sloka interleaved pages) if present
+        here = Path(__file__).parent
+        interleaved = here / PDF_NAME.replace(".pdf", "_interleaved.pdf")
+        pdf = interleaved if interleaved.exists() else here / PDF_NAME
     if not pdf.exists():
         print(f"PDF not found: {pdf}", file=sys.stderr)
         return 1
