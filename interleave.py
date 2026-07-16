@@ -30,7 +30,12 @@ CLIP_EDGE_PAD = 4.0  # top/bottom padding for the first/last Devanagari clip
 
 
 def classify_lines(page):
-    """Group spans into visual lines; return (devanagari_bboxes, translit_bboxes)."""
+    """Group spans into visual lines.
+
+    Returns (devanagari_bboxes, translit_bboxes, is_rm). `is_rm` is True when the
+    Devanagari uses the RM Devanagari font (cantos 10-12), whose metric box omits
+    descenders; the Indevr font (cantos 1-9) reports them accurately.
+    """
     rows = {}
     for b in page.get_text("dict")["blocks"]:
         for ln in b.get("lines", []):
@@ -38,6 +43,7 @@ def classify_lines(page):
                 if sp["text"].strip():
                     rows.setdefault(round(sp["bbox"][1]), []).append(sp)
     deva, tl = [], []
+    is_rm = False
     for y in sorted(rows):
         spans = rows[y]
         bbox = fitz.Rect(min(s["bbox"][0] for s in spans), min(s["bbox"][1] for s in spans),
@@ -45,9 +51,11 @@ def classify_lines(page):
         size = max(s["size"] for s in spans)
         if any(not s["font"].startswith(LATIN) for s in spans):
             deva.append(bbox)
+            if any("Devanagari" in s["font"] for s in spans):   # 'RM Devanagari'
+                is_rm = True
         elif any("Italic" in s["font"] for s in spans) and size >= 16:
             tl.append(bbox)
-    return deva, tl
+    return deva, tl, is_rm
 
 
 WRAP_MAX_FRAC = 0.55     # a transliteration line this much narrower than the
@@ -129,7 +137,8 @@ def verse_rows(deva, tl):
 
 
 def is_transformable(src, pno):
-    return verse_rows(*classify_lines(src[pno])) is not None
+    deva, tl, _ = classify_lines(src[pno])
+    return verse_rows(deva, tl) is not None
 
 
 def _render_row(new, src, pno, row, y, max_w):
@@ -161,8 +170,9 @@ def draw_interleaved(new, src, pno):
     nothing) if the verse isn't cleanly pairable."""
     page = src[pno]
     W, H = page.rect.width, page.rect.height
-    deva, tl = classify_lines(page)
-    deva = expand_deva(deva)                     # capture full Devanagari ink
+    deva, tl, is_rm = classify_lines(page)
+    if is_rm:                                     # RM Devanagari clips descenders;
+        deva = expand_deva(deva)                  # Indevr is fine, leave it tight
     rows = verse_rows(deva, tl)
     if rows is None:
         return False
