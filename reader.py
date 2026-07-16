@@ -24,7 +24,7 @@ from pathlib import Path
 
 import fitz
 import numpy as np
-from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QIcon, QImage, QKeyEvent, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -42,6 +42,7 @@ from PyQt6.QtWidgets import (
 PDF_NAME = "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf"
 
 ZOOM_MIN, ZOOM_MAX = 0.4, 6.0
+CURSOR_HIDE_MS = 2500      # hide the mouse after this idle time in fullscreen
 
 MODE_NAMES = ("Translation", "Sloka", "Interleaved")   # nav modes cycled by `s`
 
@@ -552,9 +553,36 @@ class Reader(QMainWindow):
         self._save_soon = QTimer(self, singleShot=True)
         self._save_soon.timeout.connect(self._save)
 
+        # auto-hide the mouse while idle in fullscreen
+        self._cursor_hidden = False
+        self._cursor_timer = QTimer(self, singleShot=True)
+        self._cursor_timer.timeout.connect(self._hide_cursor)
+        for w in (central, self.view, self.view.viewport(), self.view.label):
+            w.setMouseTracking(True)          # get moves without a button held
+        QApplication.instance().installEventFilter(self)
+
         self.setWindowTitle("SB · CC · CB Reader")
         self.resize(1000, 900)
         self.goto(self.page)
+
+    # -- idle cursor --------------------------------------------------------
+
+    def _hide_cursor(self) -> None:
+        if self.isFullScreen() and not self._cursor_hidden:
+            QApplication.setOverrideCursor(Qt.CursorShape.BlankCursor)
+            self._cursor_hidden = True
+
+    def _show_cursor(self) -> None:
+        if self._cursor_hidden:
+            QApplication.restoreOverrideCursor()
+            self._cursor_hidden = False
+
+    def eventFilter(self, obj, ev) -> bool:
+        if ev.type() == QEvent.Type.MouseMove:
+            self._show_cursor()
+            if self.isFullScreen():
+                self._cursor_timer.start(CURSOR_HIDE_MS)
+        return False                          # never consume the event
 
     # -- navigation ---------------------------------------------------------
 
@@ -707,8 +735,16 @@ class Reader(QMainWindow):
         except OSError:
             pass
 
+    def changeEvent(self, e) -> None:
+        # leaving fullscreen by any route -> stop hiding and show the cursor
+        if e.type() == QEvent.Type.WindowStateChange and not self.isFullScreen():
+            self._cursor_timer.stop()
+            self._show_cursor()
+        super().changeEvent(e)
+
     def closeEvent(self, e) -> None:
-        self._save()  # flush whatever the debounce still owes
+        self._show_cursor()   # never leave a hidden override cursor behind
+        self._save()          # flush whatever the debounce still owes
         super().closeEvent(e)
 
     # -- key handling -------------------------------------------------------
@@ -786,7 +822,13 @@ class Reader(QMainWindow):
                 self.bar.setVisible(not self.bar.isVisible())
                 self._save_soon.start(600)
             case Qt.Key.Key_F:
-                self.showNormal() if self.isFullScreen() else self.showFullScreen()
+                if self.isFullScreen():
+                    self.showNormal()
+                    self._cursor_timer.stop()
+                    self._show_cursor()
+                else:
+                    self.showFullScreen()
+                    self._cursor_timer.start(CURSOR_HIDE_MS)
             case Qt.Key.Key_Q | Qt.Key.Key_Escape:
                 self.close()
             case _:

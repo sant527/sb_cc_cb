@@ -51,7 +51,7 @@ Forward is **down / right**.
 | `c` | centre the page horizontally |
 | `+` / `−` | zoom in / out |
 | `0` | fit to width (same as `w`) |
-| `f` | fullscreen |
+| `f` | fullscreen (cursor auto-hides when idle) |
 | `Home` / `End` | first / last page |
 | `q` / `Esc` | quit |
 
