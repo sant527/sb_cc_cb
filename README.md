@@ -37,7 +37,8 @@ Forward is **down / right**.
 | `→` | **next** page |
 | `←` | previous page |
 | mouse wheel | scroll within the page |
-| `Enter` | **random** verse (in the current nav mode) |
+| `Enter` | **random** verse (from the chosen scope, in the current nav mode) |
+| `r` | choose which cantos/sections `Enter` draws from |
 | `s` | cycle nav mode: translation → sloka → interleaved |
 | `Space` / `PgDn` | one page forward |
 | `PgUp` | one page back |
@@ -149,6 +150,15 @@ SB 1.1.1        Madhya 20.268        CBAdi 10.112        Antya 4.168
 ```
 
 `↑`/`↓` to pick, `Enter` to go, `Esc` to dismiss.
+
+## Random scope
+
+`Enter` jumps to a random verse. Press `r` to choose which parts of the corpus
+it draws from — a checkbox tree of **SB cantos 1–12**, **CC** (Adi / Madhya /
+Antya) and **CB** (Adi / Madhya / Antya), each with its verse count. Check a
+whole book's box to toggle all its sections. **All** resets to the full corpus.
+The scope persists between runs, and the status bar shows it when you press
+`Enter` (e.g. `Random · SB Canto 1`).
 
 ## How "next translation" works
 

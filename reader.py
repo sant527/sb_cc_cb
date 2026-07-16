@@ -28,6 +28,8 @@ from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QIcon, QImage, QKeyEvent, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
+    QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -35,11 +37,41 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QScrollArea,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 PDF_NAME = "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf"
+
+# Random-scope groups: SB cantos 1-12, and CC / CB by section.
+CANTOS = [str(i) for i in range(1, 13)]
+SCOPE_GROUPS = (
+    [f"SB:{c}" for c in CANTOS]
+    + [f"CC:{s}" for s in ("Adi", "Madhya", "Antya")]
+    + [f"CB:{s}" for s in ("Adi", "Madhya", "Antya")]
+)
+
+
+def group_key(label: str) -> str | None:
+    """Map a verse label to its scope group (or None for prefatory 'PRE:' etc.)."""
+    if label.startswith("SB "):
+        canto = label[3:].split(".", 1)[0]
+        return f"SB:{canto}" if canto in CANTOS else None
+    if label.startswith("CBAdi"):
+        return "CB:Adi"
+    if label.startswith("CBMad"):
+        return "CB:Madhya"
+    if label.startswith("CBAnt"):
+        return "CB:Antya"
+    if label.startswith("Adi "):
+        return "CC:Adi"
+    if label.startswith("Madhya "):
+        return "CC:Madhya"
+    if label.startswith("Antya "):
+        return "CC:Antya"
+    return None
 
 ZOOM_MIN, ZOOM_MAX = 0.4, 6.0
 CURSOR_HIDE_MS = 2500      # hide the mouse after this idle time in fullscreen
@@ -156,6 +188,12 @@ class Index:
         # interleaved pages live at the tail of the PDF -> explicit page->verse map
         self.inter_to_i = {e.interleaved: i for i, e in enumerate(entries)
                            if e.interleaved > 0}
+        # scope group -> verse indices, for the random-verse filter
+        self.groups: dict[str, list[int]] = {}
+        for i, e in enumerate(entries):
+            g = group_key(e.label)
+            if g:
+                self.groups.setdefault(g, []).append(i)
 
     # -- build / cache ------------------------------------------------------
 
@@ -500,6 +538,70 @@ class JumpPalette(QWidget):
         super().keyPressEvent(e)
 
 
+class ScopePicker(QDialog):
+    """Choose which cantos/sections the random verse (Enter) is drawn from."""
+
+    def __init__(self, index: Index, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Random verse from…")
+        self.resize(320, 480)
+        self.setStyleSheet("""
+            QDialog, QTreeWidget { background:#232323; color:#e8e8e8; }
+            QTreeWidget { border:0; font-size:14px; }
+            QTreeWidget::item { padding:3px; }
+        """)
+
+        self.tree = QTreeWidget()
+        self.tree.setHeaderHidden(True)
+        self.leaves: dict[str, QTreeWidgetItem] = {}
+
+        def branch(title: str, rows: list[tuple[str, str]]) -> None:
+            top = QTreeWidgetItem(self.tree, [title])
+            top.setFlags(top.flags() | Qt.ItemFlag.ItemIsUserCheckable
+                         | Qt.ItemFlag.ItemIsAutoTristate)
+            top.setCheckState(0, Qt.CheckState.Checked)
+            for key, disp in rows:
+                n = len(index.groups.get(key, []))
+                it = QTreeWidgetItem(top, [f"{disp}  ({n})"])
+                it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                it.setData(0, Qt.ItemDataRole.UserRole, key)
+                self.leaves[key] = it
+            top.setExpanded(True)
+
+        branch("Śrīmad Bhāgavatam", [(f"SB:{c}", f"Canto {c}") for c in CANTOS])
+        branch("Caitanya-caritāmṛta",
+               [(f"CC:{s}", s) for s in ("Adi", "Madhya", "Antya")])
+        branch("Caitanya-bhāgavata",
+               [(f"CB:{s}", s) for s in ("Adi", "Madhya", "Antya")])
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Reset
+            | QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Reset).setText("All")
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        buttons.button(QDialogButtonBox.StandardButton.Reset).clicked.connect(self._all)
+
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("Enter picks a random verse from:"))
+        lay.addWidget(self.tree)
+        lay.addWidget(buttons)
+
+    def _all(self) -> None:
+        for it in self.leaves.values():
+            it.setCheckState(0, Qt.CheckState.Checked)
+
+    def set_scope(self, scope: set[str]) -> None:
+        for key, it in self.leaves.items():
+            it.setCheckState(0, Qt.CheckState.Checked if key in scope
+                             else Qt.CheckState.Unchecked)
+
+    def scope(self) -> set[str]:
+        return {k for k, it in self.leaves.items()
+                if it.checkState(0) == Qt.CheckState.Checked}
+
+
 # --------------------------------------------------------------------------
 # Main window
 # --------------------------------------------------------------------------
@@ -511,7 +613,7 @@ class Reader(QMainWindow):
         self.index = Index.load(pdf, self.doc)
         self.state_file = pdf.with_suffix(".state.json")
         (self.page, self.theme_i, self.dim_i, mode, zoom,
-         show_bar, self.nav_mode) = self._restore()
+         show_bar, self.nav_mode, self.scope) = self._restore()
 
         self.view = PageView(self.doc)
         self.view.mode, self.view.zoom = mode, zoom
@@ -663,11 +765,38 @@ class Reader(QMainWindow):
         self._flash(MODE_NAMES[self.nav_mode])
         self._save_soon.start(600)
 
+    def _scope_pool(self) -> list[int]:
+        """Verse indices the random picker draws from, honouring self.scope."""
+        if self.scope >= set(SCOPE_GROUPS):        # everything -> include PRE etc.
+            return list(range(len(self.index.entries)))
+        pool = [i for g in self.scope for i in self.index.groups.get(g, [])]
+        return pool or list(range(len(self.index.entries)))
+
     def random_translation(self) -> None:
-        """Enter -> a random verse, in the current nav mode."""
-        i = random.randrange(len(self.index.entries))
+        """Enter -> a random verse from the chosen scope, in the current nav mode."""
+        i = random.choice(self._scope_pool())
         self.goto(self.index.mode_page(i, self.nav_mode))
-        self._flash("Random")
+        self._flash("Random" if self.scope >= set(SCOPE_GROUPS)
+                    else f"Random · {self._scope_label()}")
+
+    def _scope_label(self) -> str:
+        """Short description of the active random scope for the status flash."""
+        books = {g.split(":")[0] for g in self.scope}
+        if len(self.scope) == 1:
+            return next(iter(self.scope)).replace(":", " ")
+        if len(books) == 1:
+            return f"{books.pop()} ({len(self.scope)})"
+        return f"{len(self.scope)} sections"
+
+    def open_scope(self) -> None:
+        dlg = ScopePicker(self.index, self)
+        dlg.set_scope(self.scope)
+        if dlg.exec():
+            chosen = dlg.scope()
+            self.scope = chosen or set(SCOPE_GROUPS)   # empty selection -> all
+            self._flash("Random scope: "
+                        + ("All" if self.scope >= set(SCOPE_GROUPS) else self._scope_label()))
+            self._save_soon.start(600)
 
     def _sync_status(self, note: str = "") -> None:
         i = self._current_verse()
@@ -695,7 +824,7 @@ class Reader(QMainWindow):
 
     # -- persistence --------------------------------------------------------
 
-    def _restore(self) -> tuple[int, int, int, str, float, bool, int]:
+    def _restore(self) -> tuple[int, int, int, str, float, bool, int, set]:
         try:
             blob = json.loads(self.state_file.read_text())
             page = int(blob["page"])
@@ -716,10 +845,14 @@ class Reader(QMainWindow):
             else:
                 nav = 1 if blob.get("sloka") else 0    # migrate old sloka bool
             nav = nav if nav in (0, 1, 2) else 0
-            return (page, theme_i, dim_i, fit, zoom, bool(blob.get("bar", False)), nav)
+            saved = blob.get("scope")
+            scope = (set(saved) & set(SCOPE_GROUPS)) if saved else set(SCOPE_GROUPS)
+            scope = scope or set(SCOPE_GROUPS)
+            return (page, theme_i, dim_i, fit, zoom,
+                    bool(blob.get("bar", False)), nav, scope)
         except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
-            # page 1, Normal at full brightness, fit width, bar hidden, translation mode
-            return 1, 0, 0, "width", 1.0, False, 0
+            # page 1, Normal, fit width, bar hidden, translation mode, all scopes
+            return 1, 0, 0, "width", 1.0, False, 0, set(SCOPE_GROUPS)
 
     def _save(self) -> None:
         try:
@@ -731,6 +864,7 @@ class Reader(QMainWindow):
                 "zoom": self.view.zoom,
                 "bar": self.bar.isVisible(),
                 "nav": self.nav_mode,
+                "scope": sorted(self.scope),
             }))
         except OSError:
             pass
@@ -784,6 +918,8 @@ class Reader(QMainWindow):
         match k:
             case Qt.Key.Key_Return | Qt.Key.Key_Enter:
                 self.random_translation()
+            case Qt.Key.Key_R:
+                self.open_scope()
             case Qt.Key.Key_C:
                 self.view.centre_h()
             case Qt.Key.Key_S:
