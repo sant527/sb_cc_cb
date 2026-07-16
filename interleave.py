@@ -13,6 +13,7 @@ and the text stays selectable.
 from __future__ import annotations
 
 import fitz
+import numpy as np
 
 LATIN = ("ScaGoudy", "CMR", "CMSL", "CMMI", "CMTI")
 
@@ -108,16 +109,76 @@ def _rows_for(deva, padas):
     return None
 
 
-def expand_deva(deva):
-    """Grow each Devanagari clip vertically to the midpoint of the gap to its
-    neighbours. The reported metric box omits below-baseline vowel marks (worst
-    in RM Devanagari, canto 10), so clipping to it slices descenders; tiling the
-    inter-line gaps captures the full glyph without grabbing the next line."""
+def _ink_runs(page, deva, zoom=6):
+    """Pixel-scan the Devanagari block; return one (ink_top, ink_bottom) run per
+    line. Metric boxes can't be trusted here, but the whitespace between lines is
+    directly observable."""
+    x0 = min(b.x0 for b in deva)
+    x1 = max(b.x1 for b in deva)
+    top = deva[0].y0 - 10
+    bot = deva[-1].y1 + 12
+    pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False,
+                          clip=fitz.Rect(x0, top, x1, bot))
+    img = np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, 3).mean(2)
+    ink = (img < 128).any(axis=1)
+    runs, y = [], 0
+    while y < len(ink):
+        if ink[y]:
+            s = y
+            while y < len(ink) and ink[y]:
+                y += 1
+            runs.append((top + s / zoom, top + (y - 1) / zoom))
+        else:
+            y += 1
+    return runs
+
+
+def expand_deva(page, deva):
+    """Grow each Devanagari clip to the middle of the real whitespace around it.
+
+    The metric box omits below-baseline vowel marks (RM Devanagari, cantos 10-12),
+    so clipping to it slices descenders — and cutting at the *metric* midpoint is
+    no better: it lands above the true whitespace, so the sliced ink lands inside
+    the next line's clip and reappears as a ghost. Cutting in the measured
+    whitespace band captures each line whole with nothing bleeding across.
+    """
+    if not deva:
+        return deva
+
+    def _metric_midpoints():
+        return [fitz.Rect(bb.x0,
+                          (deva[i - 1].y1 + bb.y0) / 2 if i else bb.y0 - CLIP_EDGE_PAD,
+                          bb.x1,
+                          (bb.y1 + deva[i + 1].y0) / 2 if i < len(deva) - 1
+                          else bb.y1 + CLIP_EDGE_PAD)
+                for i, bb in enumerate(deva)]
+
+    runs = _ink_runs(page, deva)
+    # Assign each run to the line it overlaps *most*. Plain overlap is too loose:
+    # a descender can reach past the next line's metric top, which would merge two
+    # lines into one. This also drops runs from the header/transliteration that the
+    # scan window catches, and merges a line whose ink splits into several runs.
+    ink: list[tuple[float, float] | None] = [None] * len(deva)
+    for a, b in runs:
+        best, best_ov = -1, 0.0
+        for i, bb in enumerate(deva):
+            ov = min(b, bb.y1) - max(a, bb.y0)
+            if ov > best_ov:
+                best, best_ov = i, ov
+        if best >= 0:
+            cur = ink[best]
+            ink[best] = (a, b) if cur is None else (min(cur[0], a), max(cur[1], b))
+    if any(x is None for x in ink):
+        return _metric_midpoints()
+    # neighbouring lines must be separated by real whitespace to cut cleanly
+    if any(ink[i][1] >= ink[i + 1][0] for i in range(len(ink) - 1)):
+        return _metric_midpoints()
+
     out = []
-    for i, bb in enumerate(deva):
-        top = (deva[i - 1].y1 + bb.y0) / 2 if i > 0 else bb.y0 - CLIP_EDGE_PAD
-        bot = (bb.y1 + deva[i + 1].y0) / 2 if i < len(deva) - 1 else bb.y1 + CLIP_EDGE_PAD
-        out.append(fitz.Rect(bb.x0, top, bb.x1, bot))
+    for i, (a, b) in enumerate(ink):
+        top = (ink[i - 1][1] + a) / 2 if i else a - CLIP_EDGE_PAD
+        bot = (b + ink[i + 1][0]) / 2 if i < len(ink) - 1 else b + CLIP_EDGE_PAD
+        out.append(fitz.Rect(deva[i].x0, top, deva[i].x1, bot))
     return out
 
 
@@ -172,7 +233,7 @@ def draw_interleaved(new, src, pno):
     W, H = page.rect.width, page.rect.height
     deva, tl, is_rm = classify_lines(page)
     if is_rm:                                     # RM Devanagari clips descenders;
-        deva = expand_deva(deva)                  # Indevr is fine, leave it tight
+        deva = expand_deva(page, deva)            # Indevr is fine, leave it tight
     rows = verse_rows(deva, tl)
     if rows is None:
         return False
