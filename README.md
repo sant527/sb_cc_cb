@@ -43,7 +43,6 @@ Forward is **down / right**.
 | `Space` / `PgDn` | one page forward |
 | `PgUp` | one page back |
 | `t` | theme picker |
-| `1`…`9` | pick a theme directly |
 | `⌘.` / `⌘,` | brighter / dimmer |
 | `i` | show / hide the status bar (hidden by default) |
 | `g` or `/` | jump to a verse |
@@ -103,9 +102,7 @@ padas re-joined).
 
 ## Colours
 
-Nineteen themes, each with eight brightness steps. Press `t` for the picker, or
-hit the number key directly (`1`-`9` reach the first nine; the rest are in the
-picker).
+Nineteen themes, each with **30 brightness steps**. Press `t` for the picker.
 
 | # | Theme | Page | Letters |
 | --- | --- | --- | --- |
@@ -136,7 +133,7 @@ Dark (Visual Studio) to Dark+, so they aren't duplicated.
 
 Brightness is separate from the theme: `⌘.` brightens, `⌘,` dims, clamping at
 either end (Linux: `Ctrl`). Changing theme keeps your brightness rather than
-resetting it. The current state shows in the status bar (`Monokai · 3/8`) and is
+resetting it. The current state shows in the status bar (`Monokai · 3/30`) and is
 remembered between runs.
 
 In the picker, arrowing through the list **previews each theme live** on the
@@ -149,10 +146,10 @@ the gold headings tint along instead of flattening to grey. (For the black-ink
 themes this is exactly a multiply by the paper colour.) Solarized needs the
 `ink` term because its text is a slate grey, not black.
 
-Contrast narrows at the dim end — sharpest for Green 8/8 and Orange 8/8, where
-the paper darkens while the letters stay pure black. Widen the range by raising
-the last value of `DIM_LEVELS` in `reader.py`; the palettes themselves are the
-`THEMES` tuple right above it, and adding another is one more line.
+Contrast narrows at the dim end — sharpest for Green and Orange at 30/30, where
+the paper darkens while the letters stay pure black. Widen or re-grain the range
+with `DIM_FLOOR` / `DIM_STEPS` in `reader.py`; the palettes themselves are the
+`THEMES` tuple right above, and adding another is one more line.
 
 ## Jump to a verse
 

@@ -123,8 +123,10 @@ THEMES = (
 #   Dark (Visual Studio)           -> Dark+       (#d4d4d4 on #1e1e1e)
 #   Solarized Light / Solarized Dark / Monokai    (same names above)
 
-# 8 brightness variations per theme: brightest -> shaded.
-DIM_LEVELS = (1.00, 0.91, 0.83, 0.74, 0.66, 0.57, 0.49, 0.40)
+# 30 brightness steps per theme, brightest -> shaded.
+DIM_STEPS, DIM_FLOOR = 30, 0.40
+DIM_LEVELS = tuple(round(1.0 - i * (1.0 - DIM_FLOOR) / (DIM_STEPS - 1), 4)
+                   for i in range(DIM_STEPS))
 
 
 def build_lut(theme: Theme, dim: float) -> "np.ndarray":
@@ -457,7 +459,7 @@ class ThemePalette(QWidget):
             p.setFont(QFont("Georgia", 12))
             p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, "Aa")
             p.end()
-            it = QListWidgetItem(QIcon(pm), f"  {i + 1}   {th.name}")
+            it = QListWidgetItem(QIcon(pm), f"  {th.name}")
             it.setData(Qt.ItemDataRole.UserRole, i)
             self.list.addItem(it)
         self.list.setIconSize(QSize(46, 22))
@@ -484,9 +486,6 @@ class ThemePalette(QWidget):
             self._accept()
         elif k == Qt.Key.Key_Escape:
             self.hide()
-        elif Qt.Key.Key_1 <= k <= Qt.Key.Key_9 and k - Qt.Key.Key_1 < len(THEMES):
-            self.list.setCurrentRow(k - Qt.Key.Key_1)
-            self._accept()
         else:
             super().keyPressEvent(e)
 
@@ -947,11 +946,6 @@ class Reader(QMainWindow):
             if k == Qt.Key.Key_Comma:
                 self.step_brightness(-1)
                 return
-
-        # 1..9 pick a theme outright
-        if Qt.Key.Key_1 <= k <= Qt.Key.Key_9 and k - Qt.Key.Key_1 < len(THEMES):
-            self.set_theme(k - Qt.Key.Key_1)
-            return
 
         match k:
             case Qt.Key.Key_Return | Qt.Key.Key_Enter:
