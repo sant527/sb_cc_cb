@@ -185,8 +185,11 @@ class Index:
     def __init__(self, entries: list[Translation]) -> None:
         self.entries = entries
         self.pages = [e.page for e in entries]           # sorted, for bisect
-        # interleaved pages live at the tail of the PDF -> explicit page->verse map
+        # interleaved pages live at the tail of the PDF -> explicit page->verse maps
+        # so paging can treat one as if it sat right after its sloka page
         self.inter_to_i = {e.interleaved: i for i, e in enumerate(entries)
+                           if e.interleaved > 0}
+        self.sloka_to_i = {e.sloka: i for i, e in enumerate(entries)
                            if e.interleaved > 0}
         # scope group -> verse indices, for the random-verse filter
         self.groups: dict[str, list[int]] = {}
@@ -701,15 +704,26 @@ class Reader(QMainWindow):
         self._save_soon.start(600)
 
     def step_page(self, delta: int) -> None:
-        # Interleaved pages sit at the tail, not physically by their sloka. When
-        # paging off one, step into the original sequence as if it lived right
-        # after its sloka page (so right -> purport, left -> the sloka page).
-        i = self.index.inter_to_i.get(self.page)
-        if i is not None:
-            base = self.index.entries[i].sloka
+        """Page by one, treating an interleaved page as if it sat right after its
+        sloka. They actually live at the tail of the PDF, so paging has to route
+        both out of and back into them, or they'd be skipped."""
+        idx = self.index
+        i = idx.inter_to_i.get(self.page)
+        if i is not None:                       # leaving an interleaved page
+            base = idx.entries[i].sloka
             self.goto(base + (delta if delta > 0 else delta + 1))
-        else:
-            self.goto(self.page + delta)
+            return
+        if delta == 1:                          # sloka -> its interleaved page
+            v = idx.sloka_to_i.get(self.page)
+            if v is not None:
+                self.goto(idx.entries[v].interleaved)
+                return
+        elif delta == -1:                       # page after the sloka -> back into it
+            v = idx.sloka_to_i.get(self.page - 1)
+            if v is not None:
+                self.goto(idx.entries[v].interleaved)
+                return
+        self.goto(self.page + delta)
 
     # -- colour ladder ------------------------------------------------------
 
