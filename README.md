@@ -43,7 +43,7 @@ Forward is **down / right**.
 | `Space` / `PgDn` | one page forward |
 | `PgUp` | one page back |
 | `t` | theme picker |
-| `⌘.` / `⌘,` | brighter / dimmer |
+| `⌘.` / `⌘,` | brighter / dimmer (hold to ramp) |
 | `i` | show / hide the status bar (hidden by default) |
 | `g` or `/` | jump to a verse |
 | `w` | fit to width |
@@ -132,7 +132,7 @@ VS Code's Light+ and Dark High Contrast are identical to Normal and Inverted, an
 Dark (Visual Studio) to Dark+, so they aren't duplicated.
 
 Brightness is separate from the theme: `⌘.` brightens, `⌘,` dims, clamping at
-either end (Linux: `Ctrl`). Changing theme keeps your brightness rather than
+either end (Linux: `Ctrl`). Hold either to ramp through the 30 steps. Changing theme keeps your brightness rather than
 resetting it. The current state shows in the status bar (`Monokai · 3/30`) and is
 remembered between runs.
 

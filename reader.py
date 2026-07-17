@@ -935,10 +935,8 @@ class Reader(QMainWindow):
             case Qt.Key.Key_Left:
                 self.step_page(-1); return
 
-        if e.isAutoRepeat():
-            return  # everything below is a discrete action, not a hold
-
-        # Cmd (macOS) / Ctrl (Linux) + , = dimmer, + . = brighter
+        # Cmd (macOS) / Ctrl (Linux) + , = dimmer, + . = brighter.
+        # Above the auto-repeat guard so holding either ramps through the steps.
         if e.modifiers() & Qt.KeyboardModifier.ControlModifier:
             if k == Qt.Key.Key_Period:
                 self.step_brightness(+1)
@@ -946,6 +944,9 @@ class Reader(QMainWindow):
             if k == Qt.Key.Key_Comma:
                 self.step_brightness(-1)
                 return
+
+        if e.isAutoRepeat():
+            return  # everything below is a discrete action, not a hold
 
         match k:
             case Qt.Key.Key_Return | Qt.Key.Key_Enter:
