@@ -103,8 +103,9 @@ padas re-joined).
 
 ## Colours
 
-Nine themes, each with eight brightness steps. Press `t` for the picker, or hit
-the number key directly.
+Nineteen themes, each with eight brightness steps. Press `t` for the picker, or
+hit the number key directly (`1`-`9` reach the first nine; the rest are in the
+picker).
 
 | # | Theme | Page | Letters |
 | --- | --- | --- | --- |
@@ -117,8 +118,21 @@ the number key directly.
 | 7 | Monokai | `#272822` | `#f8f8f2` |
 | 8 | Mariana | `#343d46` | `#d8dee9` |
 | 9 | Sepia | `#f4ecd8` | black |
+| 10 | Red | `#390000` | `#f8f8f8` |
+| 11 | Dark+ | `#1e1e1e` | `#d4d4d4` |
+| 12 | Dark Modern | `#1f1f1f` | `#cccccc` |
+| 13 | Abyss | `#000c18` | `#6688cc` |
+| 14 | Tomorrow Night Blue | `#002451` | `#ffffff` |
+| 15 | Kimbie Dark | `#221a0f` | `#d3af86` |
+| 16 | Monokai Dimmed | `#1e1e1e` | `#c5c8c6` |
+| 17 | Quiet Light | `#f5f5f5` | `#333333` |
+| 18 | Light Modern | `#ffffff` | `#3b3b3b` |
+| 19 | Light High Contrast | `#ffffff` | `#292929` |
 
 Monokai is Sublime Text's classic default scheme; Mariana is its newer one.
+10-19 are VS Code's built-in schemes (editor foreground on editor background).
+VS Code's Light+ and Dark High Contrast are identical to Normal and Inverted, and
+Dark (Visual Studio) to Dark+, so they aren't duplicated.
 
 Brightness is separate from the theme: `⌘.` brightens, `⌘,` dims, clamping at
 either end (Linux: `Ctrl`). Changing theme keeps your brightness rather than

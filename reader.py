@@ -105,7 +105,23 @@ THEMES = (
     Theme("Monokai",    (248, 248, 242), (39, 40, 34)),     # Sublime Text's classic default
     Theme("Mariana",    (216, 222, 233), (52, 61, 70)),     # Sublime Text's newer default
     Theme("Sepia",      BLACK, (244, 236, 216)),            # warm paper
+    # VS Code schemes (editor.foreground on editor.background)
+    Theme("Red",        (248, 248, 248), (57, 0, 0)),           # #f8f8f8 on #390000
+    Theme("Dark+",      (212, 212, 212), (30, 30, 30)),         # #d4d4d4 on #1e1e1e
+    Theme("Dark Modern", (204, 204, 204), (31, 31, 31)),        # #cccccc on #1f1f1f
+    Theme("Abyss",      (102, 136, 204), (0, 12, 24)),          # #6688cc on #000c18
+    Theme("Tomorrow Night Blue", WHITE, (0, 36, 81)),           # #ffffff on #002451
+    Theme("Kimbie Dark", (211, 175, 134), (34, 26, 15)),        # #d3af86 on #221a0f
+    Theme("Monokai Dimmed", (197, 200, 198), (30, 30, 30)),     # #c5c8c6 on #1e1e1e
+    Theme("Quiet Light", (51, 51, 51), (245, 245, 245)),        # #333333 on #f5f5f5
+    Theme("Light Modern", (59, 59, 59), WHITE),                 # #3b3b3b on #ffffff
+    Theme("Light High Contrast", (41, 41, 41), WHITE),          # #292929 on #ffffff
 )
+# VS Code themes already covered above by an identical palette:
+#   Light+ / Light (Visual Studio) -> Normal      (#000000 on #ffffff)
+#   Dark High Contrast             -> Inverted    (#ffffff on #000000)
+#   Dark (Visual Studio)           -> Dark+       (#d4d4d4 on #1e1e1e)
+#   Solarized Light / Solarized Dark / Monokai    (same names above)
 
 # 8 brightness variations per theme: brightest -> shaded.
 DIM_LEVELS = (1.00, 0.91, 0.83, 0.74, 0.66, 0.57, 0.49, 0.40)
@@ -418,6 +434,8 @@ class ThemePalette(QWidget):
         super().__init__()
         self.setWindowFlags(Qt.WindowType.Popup)
         self.resize(300, 46 + 34 * len(THEMES))
+        self._restore_to = 0        # set properly by open(); hideEvent may fire first
+        self._committed = False
 
         self.list = QListWidget()
         lay = QVBoxLayout(self)
