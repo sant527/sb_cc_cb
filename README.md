@@ -128,11 +128,11 @@ uv run python build_interleaved.py      # ~30 min, one-time
 ```
 
 It keeps every original page untouched and appends one interleaved page per
-transformable SB sloka (12,122 of them, ~93%) at the tail; the sidecar maps each
+transformable SB sloka (~97%) at the tail; the sidecar maps each
 verse to its translation / sloka / interleaved page. See
 [interleave.py](interleave.py) for how a sloka page is rebuilt (transliteration
 on top, Devanagari 1.5× below, `//`-joined padas for older-canto verses, wrapped
-padas re-joined).
+padas re-joined, and a leading `… uväca` speaker line paired 1:1).
 
 ## Colours
 

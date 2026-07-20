@@ -12,10 +12,16 @@ and the text stays selectable.
 """
 from __future__ import annotations
 
+import re
+
 import fitz
 import numpy as np
 
 LATIN = ("ScaGoudy", "CMR", "CMSL", "CMMI", "CMTI")
+
+# Speaker attribution ("vyäsa uväca", "çré-bhagavän uväca", ...): its own line
+# that pairs 1:1, sitting above the verse proper.
+ATTRIB_RE = re.compile(r"uv[aä]ca\b", re.IGNORECASE)
 
 DEVA_SCALE = 1.5     # enlarge Devanagari glyphs (native ~13pt -> ~19pt)
 TL_SCALE = 1.0       # leave transliteration at its native ~17pt
@@ -33,9 +39,10 @@ CLIP_EDGE_PAD = 4.0  # top/bottom padding for the first/last Devanagari clip
 def classify_lines(page):
     """Group spans into visual lines.
 
-    Returns (devanagari_bboxes, translit_bboxes, is_rm). `is_rm` is True when the
-    Devanagari uses the RM Devanagari font (cantos 10-12), whose metric box omits
-    descenders; the Indevr font (cantos 1-9) reports them accurately.
+    Returns (devanagari_bboxes, translit_bboxes, tl_texts, is_rm). `tl_texts` is
+    the transliteration line strings (parallel to translit_bboxes). `is_rm` is
+    True when the Devanagari uses the RM Devanagari font (cantos 10-12), whose
+    metric box omits descenders; Indevr (cantos 1-9) reports them accurately.
     """
     rows = {}
     for b in page.get_text("dict")["blocks"]:
@@ -43,7 +50,7 @@ def classify_lines(page):
             for sp in ln["spans"]:
                 if sp["text"].strip():
                     rows.setdefault(round(sp["bbox"][1]), []).append(sp)
-    deva, tl = [], []
+    deva, tl, tl_texts = [], [], []
     is_rm = False
     for y in sorted(rows):
         spans = rows[y]
@@ -56,7 +63,19 @@ def classify_lines(page):
                 is_rm = True
         elif any("Italic" in s["font"] for s in spans) and size >= 16:
             tl.append(bbox)
-    return deva, tl, is_rm
+            tl_texts.append("".join(s["text"] for s in spans).strip())
+    return deva, tl, tl_texts, is_rm
+
+
+def leading_attributions(tl_texts):
+    """How many leading transliteration lines are speaker attributions."""
+    n = 0
+    for t in tl_texts:
+        if ATTRIB_RE.search(t):
+            n += 1
+        else:
+            break
+    return n
 
 
 WRAP_MAX_FRAC = 0.55     # a transliteration line this much narrower than the
@@ -182,24 +201,38 @@ def expand_deva(page, deva):
     return out
 
 
-def verse_rows(deva, tl):
+def _pair_body(deva, tl):
+    """One-line-per-pada first; else merge wrapped continuation lines."""
+    if not deva or not tl:
+        return None
+    return _rows_for(deva, [[t] for t in tl]) or _rows_for(deva, _group_padas(tl))
+
+
+def verse_rows(deva, tl, attrib=0):
     """Ordered rows for the interleaved verse, or None if not cleanly pairable.
 
     A row is a list of ("clip", bbox, scale) / ("sep",) segments on one baseline.
-    Tries the straight one-line-per-pada pairing first (the common case); only if
-    that doesn't pair does it merge wrapped continuation lines and retry.
+    `attrib` leading speaker-attribution lines (e.g. "vyäsa uväca") are peeled off
+    and paired 1:1, then the verse body is paired on its own — so a 3-vs-5 verse
+    (attribution + a 2-vs-4 body) interleaves cleanly.
     """
     if not deva or not tl:
         return None
-    rows = _rows_for(deva, [[t] for t in tl])
-    if rows is not None:
-        return rows
-    return _rows_for(deva, _group_padas(tl))
+    attrib = min(attrib, len(deva) - 1, len(tl) - 1)   # keep at least a body line
+    if attrib > 0:
+        body = _pair_body(deva[attrib:], tl[attrib:])
+        if body is not None:
+            head = []
+            for i in range(attrib):
+                head.append([("clip", tl[i], TL_SCALE)])       # attribution: translit
+                head.append([("clip", deva[i], DEVA_SCALE)])   # then its Devanagari
+            return head + body
+    return _pair_body(deva, tl)
 
 
 def is_transformable(src, pno):
-    deva, tl, _ = classify_lines(src[pno])
-    return verse_rows(deva, tl) is not None
+    deva, tl, tl_texts, _ = classify_lines(src[pno])
+    return verse_rows(deva, tl, leading_attributions(tl_texts)) is not None
 
 
 def _render_row(new, src, pno, row, y, max_w):
@@ -231,10 +264,10 @@ def draw_interleaved(new, src, pno):
     nothing) if the verse isn't cleanly pairable."""
     page = src[pno]
     W, H = page.rect.width, page.rect.height
-    deva, tl, is_rm = classify_lines(page)
+    deva, tl, tl_texts, is_rm = classify_lines(page)
     if is_rm:                                     # RM Devanagari clips descenders;
         deva = expand_deva(page, deva)            # Indevr is fine, leave it tight
-    rows = verse_rows(deva, tl)
+    rows = verse_rows(deva, tl, leading_attributions(tl_texts))
     if rows is None:
         return False
 
