@@ -22,9 +22,43 @@ uv run python reader.py
 Point it at a different PDF, or the file elsewhere, with
 `uv run python reader.py /path/to/SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf`.
 
-First launch builds a translation index from the PDF outline (~2 s) and caches it
-to `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.index.json`; later launches read the cache.
-Your last page is remembered in `*.state.json` and restored on the next run.
+## Generated files
+
+None of these are in git — they're rebuilt from the PDF. Only one of them is
+precious.
+
+| File | Size | Purpose | Safe to delete? |
+| --- | --- | --- | --- |
+| `*.state.json` | ~100 B | your bookmark + preferences | yes |
+| `*.pages.json` | ~3 MB | the map of the book | only if you can re-run the build |
+| `*.index.json` | ~3 MB | cached outline parse | yes |
+
+**`*.state.json` — so the app remembers you.** Its whole purpose is continuity
+across restarts: last page, theme, brightness, fit mode, nav mode, random scope.
+Without it every launch would dump you at page 1 with the defaults. Purely a
+convenience — delete it and you lose only your place. One per PDF, since page
+numbers differ between files.
+
+**`*.pages.json` — so the reader can think in verses, not pages.** Written by
+`build_interleaved.py`; maps each of the 36,137 verses to its translation /
+sloka / interleaved page (`-1` where a verse has none). This is what makes `s`,
+`g` and `Enter` work. It exists for two reasons:
+
+1. **The interleaved page numbers exist nowhere else.** Interleaved pages are
+   appended at the *tail* of the PDF — page 245731 contains nothing saying "I
+   belong to SB 10.44.6". Only the build knew that when it drew the page, so it
+   writes the mapping down; otherwise the knowledge dies with the build and the
+   reader could never offer interleaved mode at all.
+2. **Speed.** The translation/sloka pages *could* be re-derived from the PDF's
+   58,520 bookmarks, but that costs ~2 s every launch. Reading flat JSON is
+   instant.
+
+So it's the bridge between the build and the reader. Regenerable, but only by
+re-running the ~33 min build.
+
+**`*.index.json` — the fallback.** The older cache, built by parsing the PDF
+outline (~2 s) the first time a PDF is opened. Used for the original PDF, which
+has no `.pages.json`. The reader prefers `.pages.json` whenever it exists.
 
 ## Keys
 
