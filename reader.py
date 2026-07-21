@@ -612,6 +612,7 @@ class BookmarkList(QWidget):
         self.setWindowFlags(Qt.WindowType.Popup)
         self.resize(560, 420)
         self.list = QListWidget()
+        self.list.setWordWrap(True)          # long chapter names wrap, not clip
         lay = QVBoxLayout(self)
         lay.setContentsMargins(10, 10, 10, 10)
         lay.addWidget(QLabel("Bookmarks — recent first  ·  Enter opens  ·  Del removes"))
@@ -775,6 +776,17 @@ class Reader(QMainWindow):
         self.bookmark_list.chosen.connect(self._open_bookmark)
         self.bookmark_list.deleted.connect(self._delete_bookmark)
 
+        # transient centred message (visible even when the status bar is hidden)
+        self.toast = QLabel(self)
+        self.toast.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.toast.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.toast.setStyleSheet(
+            "background:rgba(20,20,20,220); color:#f5f5f5; font-size:19px;"
+            "padding:12px 24px; border-radius:12px;")
+        self.toast.hide()
+        self._toast_timer = QTimer(self, singleShot=True)
+        self._toast_timer.timeout.connect(self.toast.hide)
+
         # coalesce state writes: holding a key turns ~4 pages/sec, and each one
         # would otherwise hit the disk
         self._save_soon = QTimer(self, singleShot=True)
@@ -876,6 +888,17 @@ class Reader(QMainWindow):
         i = self.index.verse_at(page)
         self.goto(self.index.mode_page(i, self.nav_mode) if i is not None else page)
 
+    def _toast(self, msg: str, ms: int = 1100) -> None:
+        """Show a brief centred overlay message, above everything."""
+        self.toast.setText(msg)
+        self.toast.adjustSize()
+        r = self.toast.size()
+        self.toast.move((self.width() - r.width()) // 2,
+                        (self.height() - r.height()) // 3)
+        self.toast.raise_()
+        self.toast.show()
+        self._toast_timer.start(ms)
+
     # -- bookmarks ----------------------------------------------------------
 
     def toggle_bookmark(self) -> None:
@@ -883,14 +906,14 @@ class Reader(QMainWindow):
         i = self._current_verse()
         if i is None:
             return
-        label = self.index.entries[i].label
-        hit = next((b for b in self.bookmarks if b[0] == label), None)
+        e = self.index.entries[i]
+        hit = next((b for b in self.bookmarks if b[0] == e.label), None)
         if hit:
             self.bookmarks.remove(hit)
-            self._flash("Bookmark removed")
+            self._toast(f"✕  Bookmark removed\n{e.label}")
         else:
-            self.bookmarks.insert(0, [label, self.nav_mode])   # most recent first
-            self._flash("Bookmarked")
+            self.bookmarks.insert(0, [e.label, self.nav_mode])   # most recent first
+            self._toast(f"★  Bookmarked\n{e.label}")
         self._save_soon.start(600)
 
     def _bookmark_rows(self) -> list[str]:
@@ -898,7 +921,7 @@ class Reader(QMainWindow):
         for label, mode in self.bookmarks:
             i = self.index.by_label.get(label)
             chapter = self.index.entries[i].chapter if i is not None else ""
-            rows.append(f"{label}   —   {chapter}   ·  {MODE_NAMES[mode]}")
+            rows.append(f"{label}  ·  {MODE_NAMES[mode]}\n{chapter}")
         return rows
 
     def open_bookmarks(self) -> None:
