@@ -448,11 +448,14 @@ class PageView(QScrollArea):
         sb = self.horizontalScrollBar()
         sb.setValue((sb.minimum() + sb.maximum()) // 2)
 
-    def scroll_by(self, steps: int) -> None:
-        """Scroll the page vertically (steps<0 = up). Works though the scrollbars
-        are hidden — the scroll range is still live."""
+    def scroll_by(self, steps: int, fine: bool = False) -> None:
+        """Scroll the page vertically (steps<0 = up). `fine` moves a third as far.
+        Works though the scrollbars are hidden — the scroll range is still live."""
+        step = max(40, self.viewport().height() // 6)
+        if fine:
+            step = max(12, step // 3)
         sb = self.verticalScrollBar()
-        sb.setValue(sb.value() + steps * max(40, self.viewport().height() // 6))
+        sb.setValue(sb.value() + steps * step)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -966,11 +969,15 @@ class Reader(QMainWindow):
     def keyPressEvent(self, e: QKeyEvent) -> None:
         k = e.key()
 
-        # Shift + Up/Down scrolls the current page (for tall pages). Above the
+        # Shift + Up/Down scrolls the current page (for tall pages); adding
+        # Ctrl (Meta on macOS) makes it a fine scroll (a third as far). Above the
         # plain-arrow nav and the auto-repeat guard so holding it scrolls smoothly.
-        if e.modifiers() & Qt.KeyboardModifier.ShiftModifier and k in (
+        mods = e.modifiers()
+        if mods & Qt.KeyboardModifier.ShiftModifier and k in (
                 Qt.Key.Key_Up, Qt.Key.Key_Down):
-            self.view.scroll_by(-1 if k == Qt.Key.Key_Up else +1)
+            fine = bool(mods & (Qt.KeyboardModifier.ControlModifier
+                                | Qt.KeyboardModifier.MetaModifier))
+            self.view.scroll_by(-1 if k == Qt.Key.Key_Up else +1, fine=fine)
             return
 
         # Arrows navigate; allow OS auto-repeat so holding a key keeps moving.
