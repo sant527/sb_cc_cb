@@ -248,3 +248,27 @@ So the reader pulls all 36,137 level-4 entries, sorts them by page, and a tap
 does a binary search for the next one. Level 1/2 headings ride along as the
 chapter shown in the status bar. Covers SB, CC (Adi/Madhya/Antya) and CB
 (CBAdi/CBMad/CBAnt).
+
+## Enhanced-page coverage (SB)
+
+Of the 13,004 SB verses, 13,000 get an enhanced page — the split is exact, not a
+rounding:
+
+| | count |
+| --- | --- |
+| SB verses total | **13,004** |
+| interleaved | 12,653 |
+| enlarged-sloka fallback | 347 |
+| **enhanced pages** | **13,000** |
+| no enhanced page | **4** |
+
+The 4 without one — **SB 10.8.1, 10.8.17, 10.8.28, 10.11.21** — have no Devanagari
+at all on their page in the source PDF. What's actually printed on SB 10.8.1's
+sloka page is transliteration only:
+
+```
+… SB 10.8.1 / 52   çré-çuka uväca   gargaù purohito räjan …
+```
+
+With no Devanagari to interleave or enlarge, they get no enhanced page. It's a
+gap in the source edition, not something the build dropped.
