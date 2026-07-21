@@ -258,19 +258,11 @@ def _render_row(new, src, pno, row, y, max_w):
     return row_h
 
 
-def draw_interleaved(new, src, pno):
-    """Draw the interleaved verse (header, verse, word-for-word + translation)
-    onto page `new`, copying vector content from src[pno]. Returns False (drawing
-    nothing) if the verse isn't cleanly pairable."""
+def _compose(new, src, pno, rows, deva, tl):
+    """Stamp header + given rows + the word-for-word/translation block onto page
+    `new`, copying vector content from src[pno]. `deva`/`tl` set the verse bounds."""
     page = src[pno]
     W, H = page.rect.width, page.rect.height
-    deva, tl, tl_texts, is_rm = classify_lines(page)
-    if is_rm:                                     # RM Devanagari clips descenders;
-        deva = expand_deva(page, deva)            # Indevr is fine, leave it tight
-    rows = verse_rows(deva, tl, leading_attributions(tl_texts))
-    if rows is None:
-        return False
-
     verse_top = min(r.y0 for r in deva + tl)
     verse_bot = max(r.y1 for r in deva + tl)
 
@@ -293,3 +285,31 @@ def draw_interleaved(new, src, pno):
         new.show_pdf_page(fitz.Rect(0, y, W, y + (bot - top)), src, pno,
                           clip=fitz.Rect(0, top, W, bot))
     return True
+
+
+def draw_interleaved(new, src, pno):
+    """Interleaved page: each transliteration pada above its enlarged Devanagari.
+    Returns False if the verse isn't cleanly pairable."""
+    page = src[pno]
+    deva, tl, tl_texts, is_rm = classify_lines(page)
+    if is_rm:                                     # RM Devanagari clips descenders;
+        deva = expand_deva(page, deva)            # Indevr is fine, leave it tight
+    rows = verse_rows(deva, tl, leading_attributions(tl_texts))
+    if rows is None:
+        return False
+    return _compose(new, src, pno, rows, deva, tl)
+
+
+def draw_enlarged_sloka(new, src, pno):
+    """Fallback for verses that can't be interleaved: the whole Devanagari block
+    enlarged 1.5x, then the transliteration block — same order as the original
+    sloka page. Returns False if there's no Devanagari to enlarge (CC/CB)."""
+    page = src[pno]
+    deva, tl, _, is_rm = classify_lines(page)
+    if not deva:
+        return False
+    if is_rm:
+        deva = expand_deva(page, deva)
+    rows = [[("clip", d, DEVA_SCALE)] for d in deva] \
+        + [[("clip", t, TL_SCALE)] for t in tl]
+    return _compose(new, src, pno, rows, deva, tl)

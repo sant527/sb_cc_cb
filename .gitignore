@@ -18,3 +18,7 @@ SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_interleaved.pdf
 clip_fix_compare.pdf
 *_OLD.pdf
 *_OLD.pages.json
+*_inline.pdf
+*_inline.pages.json
+.enlarged_pages.pdf
+.qpdf_args.txt

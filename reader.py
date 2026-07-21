@@ -209,6 +209,10 @@ class Index:
                            if e.interleaved > 0}
         self.sloka_to_i = {e.sloka: i for i, e in enumerate(entries)
                            if e.interleaved > 0}
+        # inline build: the enhanced page physically follows its sloka, so plain
+        # paging just works. tail build: enhanced pages sit at the PDF tail.
+        self.inline = bool(self.inter_to_i) and all(
+            e.interleaved == e.sloka + 1 for e in entries if e.interleaved > 0)
         # scope group -> verse indices, for the random-verse filter
         self.groups: dict[str, list[int]] = {}
         for i, e in enumerate(entries):
@@ -721,10 +725,14 @@ class Reader(QMainWindow):
         self._save_soon.start(600)
 
     def step_page(self, delta: int) -> None:
-        """Page by one, treating an interleaved page as if it sat right after its
-        sloka. They actually live at the tail of the PDF, so paging has to route
-        both out of and back into them, or they'd be skipped."""
+        """Page by one. In the inline build the enhanced page physically follows
+        its sloka, so plain paging suffices. In the tail build the enhanced pages
+        live at the PDF tail, so paging must route both out of and back into them
+        (treating one as if it sat right after its sloka) or they'd be skipped."""
         idx = self.index
+        if idx.inline:
+            self.goto(self.page + delta)
+            return
         i = idx.inter_to_i.get(self.page)
         if i is not None:                       # leaving an interleaved page
             base = idx.entries[i].sloka
@@ -1008,10 +1016,15 @@ def main() -> int:
     if len(sys.argv) > 1:
         pdf = Path(sys.argv[1])
     else:
-        # prefer the interleaved build (with sloka interleaved pages) if present
+        # prefer the inline build (enhanced pages in reading order), then the tail
+        # build, then the plain original
         here = Path(__file__).parent
-        interleaved = here / PDF_NAME.replace(".pdf", "_interleaved.pdf")
-        pdf = interleaved if interleaved.exists() else here / PDF_NAME
+        pdf = here / PDF_NAME
+        for variant in ("_inline.pdf", "_interleaved.pdf"):
+            cand = here / PDF_NAME.replace(".pdf", variant)
+            if cand.exists():
+                pdf = cand
+                break
     if not pdf.exists():
         print(f"PDF not found: {pdf}", file=sys.stderr)
         return 1
