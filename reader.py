@@ -204,6 +204,7 @@ class Index:
         self.entries = entries
         self.pages = [e.page for e in entries]           # sorted, for bisect
         self._refs = [self._parse_ref(e.label) for e in entries]   # (book, number)
+        self.by_label = {e.label: i for i, e in enumerate(entries)}   # for bookmarks
         # interleaved pages live at the tail of the PDF -> explicit page->verse maps
         # so paging can treat one as if it sat right after its sloka page
         self.inter_to_i = {e.interleaved: i for i, e in enumerate(entries)
@@ -600,6 +601,58 @@ class JumpPalette(QWidget):
         super().keyPressEvent(e)
 
 
+class BookmarkList(QWidget):
+    """Saved bookmarks, most-recent first. Enter opens one, Del removes it."""
+
+    chosen = pyqtSignal(int)     # row selected
+    deleted = pyqtSignal(int)    # row to remove
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowFlags(Qt.WindowType.Popup)
+        self.resize(560, 420)
+        self.list = QListWidget()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(10, 10, 10, 10)
+        lay.addWidget(QLabel("Bookmarks — recent first  ·  Enter opens  ·  Del removes"))
+        lay.addWidget(self.list)
+        self.setStyleSheet("""
+            QWidget   { background:#232323; color:#e8e8e8; }
+            QListWidget { border:0; font-size:14px; }
+            QListWidget::item { padding:6px 4px; }
+            QListWidget::item:selected { background:#3a5a8c; }
+        """)
+        self.list.itemActivated.connect(lambda _: self._accept())
+
+    def open(self, rows: list[str]) -> None:
+        self.list.clear()
+        for text in rows:
+            self.list.addItem(QListWidgetItem(text))
+        if self.list.count():
+            self.list.setCurrentRow(0)
+        self.show()
+        self.list.setFocus()
+
+    def _accept(self) -> None:
+        r = self.list.currentRow()
+        if r >= 0:
+            self.chosen.emit(r)
+            self.hide()
+
+    def keyPressEvent(self, e: QKeyEvent) -> None:
+        k = e.key()
+        if k in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._accept()
+        elif k == Qt.Key.Key_Escape:
+            self.hide()
+        elif k in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            r = self.list.currentRow()
+            if r >= 0:
+                self.deleted.emit(r)      # reader updates the model + repopulates
+        else:
+            super().keyPressEvent(e)
+
+
 class ScopePicker(QDialog):
     """Choose which cantos/sections the random verse (Enter) is drawn from."""
 
@@ -681,7 +734,7 @@ class Reader(QMainWindow):
         self.index = Index.load(pdf, self.doc)
         self.state_file = pdf.with_suffix(".state.json")
         (self.page, self.theme_i, self.dim_i, mode, zoom,
-         show_bar, self.nav_mode, self.scope) = self._restore()
+         show_bar, self.nav_mode, self.scope, self.bookmarks) = self._restore()
 
         self.view = PageView(self.doc)
         self.view.mode, self.view.zoom = mode, zoom
@@ -717,6 +770,10 @@ class Reader(QMainWindow):
         self.themes.chosen.connect(self.set_theme)
         self.themes.cancelled.connect(
             lambda: self.set_theme(self.themes._restore_to, flash=False))
+
+        self.bookmark_list = BookmarkList()
+        self.bookmark_list.chosen.connect(self._open_bookmark)
+        self.bookmark_list.deleted.connect(self._delete_bookmark)
 
         # coalesce state writes: holding a key turns ~4 pages/sec, and each one
         # would otherwise hit the disk
@@ -819,6 +876,60 @@ class Reader(QMainWindow):
         i = self.index.verse_at(page)
         self.goto(self.index.mode_page(i, self.nav_mode) if i is not None else page)
 
+    # -- bookmarks ----------------------------------------------------------
+
+    def toggle_bookmark(self) -> None:
+        """b -> bookmark the current verse (in the current mode), or un-bookmark it."""
+        i = self._current_verse()
+        if i is None:
+            return
+        label = self.index.entries[i].label
+        hit = next((b for b in self.bookmarks if b[0] == label), None)
+        if hit:
+            self.bookmarks.remove(hit)
+            self._flash("Bookmark removed")
+        else:
+            self.bookmarks.insert(0, [label, self.nav_mode])   # most recent first
+            self._flash("Bookmarked")
+        self._save_soon.start(600)
+
+    def _bookmark_rows(self) -> list[str]:
+        rows = []
+        for label, mode in self.bookmarks:
+            i = self.index.by_label.get(label)
+            chapter = self.index.entries[i].chapter if i is not None else ""
+            rows.append(f"{label}   —   {chapter}   ·  {MODE_NAMES[mode]}")
+        return rows
+
+    def open_bookmarks(self) -> None:
+        if not self.bookmarks:
+            self._flash("No bookmarks")
+            return
+        self.bookmark_list.move(
+            self.geometry().center() - self.bookmark_list.rect().center())
+        self.bookmark_list.open(self._bookmark_rows())
+
+    def _open_bookmark(self, row: int) -> None:
+        if not 0 <= row < len(self.bookmarks):
+            return
+        label, mode = self.bookmarks[row]
+        i = self.index.by_label.get(label)
+        if i is None:
+            self._flash("Verse not found")
+            return
+        self.nav_mode = mode if mode in self.index.modes_for(i) else 0
+        self.goto(self.index.mode_page(i, self.nav_mode))
+
+    def _delete_bookmark(self, row: int) -> None:
+        if not 0 <= row < len(self.bookmarks):
+            return
+        del self.bookmarks[row]
+        self._save_soon.start(600)
+        if self.bookmarks:
+            self.bookmark_list.open(self._bookmark_rows())     # repopulate, stay open
+        else:
+            self.bookmark_list.hide()
+
     def step_translation(self, delta: int) -> None:
         """Move one verse forward/back, staying in the current nav mode."""
         i = self._current_verse()
@@ -907,7 +1018,7 @@ class Reader(QMainWindow):
 
     # -- persistence --------------------------------------------------------
 
-    def _restore(self) -> tuple[int, int, int, str, float, bool, int, set]:
+    def _restore(self) -> tuple[int, int, int, str, float, bool, int, set, list]:
         try:
             blob = json.loads(self.state_file.read_text())
             page = int(blob["page"])
@@ -931,11 +1042,12 @@ class Reader(QMainWindow):
             saved = blob.get("scope")
             scope = (set(saved) & set(SCOPE_GROUPS)) if saved else set(SCOPE_GROUPS)
             scope = scope or set(SCOPE_GROUPS)
+            marks = [[str(lb), int(md)] for lb, md in blob.get("bookmarks", [])]
             return (page, theme_i, dim_i, fit, zoom,
-                    bool(blob.get("bar", False)), nav, scope)
+                    bool(blob.get("bar", False)), nav, scope, marks)
         except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
             # page 1, Normal, fit width, bar hidden, translation mode, all scopes
-            return 1, 0, 0, "width", 1.0, False, 0, set(SCOPE_GROUPS)
+            return 1, 0, 0, "width", 1.0, False, 0, set(SCOPE_GROUPS), []
 
     def _save(self) -> None:
         try:
@@ -948,6 +1060,7 @@ class Reader(QMainWindow):
                 "bar": self.bar.isVisible(),
                 "nav": self.nav_mode,
                 "scope": sorted(self.scope),
+                "bookmarks": self.bookmarks,
             }))
         except OSError:
             pass
@@ -1004,6 +1117,11 @@ class Reader(QMainWindow):
 
         if e.isAutoRepeat():
             return  # everything below is a discrete action, not a hold
+
+        if k == Qt.Key.Key_B:               # b = bookmark this verse, Shift+B = list
+            self.open_bookmarks() if mods & Qt.KeyboardModifier.ShiftModifier \
+                else self.toggle_bookmark()
+            return
 
         match k:
             case Qt.Key.Key_Return | Qt.Key.Key_Enter:
