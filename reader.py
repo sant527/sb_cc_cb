@@ -266,7 +266,7 @@ class Index:
 
         cache = pdf.with_suffix(".index.json")
         stat = pdf.stat()
-        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 4}
+        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 5}
 
         if cache.exists():
             try:
@@ -279,7 +279,8 @@ class Index:
         idx = cls.build(doc)
         cache.write_text(json.dumps({
             "stamp": stamp,
-            "entries": [[e.page, e.label, e.chapter, e.sloka] for e in idx.entries],
+            "entries": [[e.page, e.label, e.chapter, e.sloka, e.interleaved]
+                        for e in idx.entries],
         }))
         return idx
 
