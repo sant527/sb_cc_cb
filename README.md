@@ -124,7 +124,7 @@ interleaved page cycle just translation ↔ sloka.
 An enhanced page is added for every SB verse, right after its sloka:
 
 - **Interleaved** (~97% of SB) — each transliteration pada above its enlarged
-  1.5× Devanagari. See [interleave.py](interleave.py): transliteration on top,
+  1.5× Devanagari. See [interleave.py](pre_processing/interleave.py): transliteration on top,
   `//`-joined padas for older-canto verses, wrapped padas re-joined, a leading
   `… uväca` speaker line paired 1:1.
 - **Enlarged sloka** (the rest, where the counts don't pair) — the whole
@@ -136,9 +136,13 @@ transliteration), so they get no enhanced page.
 
 ### Building it — two steps
 
+The reader (`reader.py`) is standalone; the build scripts live in
+[`pre_processing/`](pre_processing/) and are only needed to (re)generate the PDF.
+
+
 ```sh
-uv run python build_interleaved.py   # 1) draw the interleaved pages (~35 min)
-uv run python build_inline.py        # 2) splice inline + add outline (~2 min, needs qpdf)
+uv run python pre_processing/build_interleaved.py   # 1) draw the interleaved pages (~35 min)
+uv run python pre_processing/build_inline.py       # 2) splice inline + add outline (~2 min, needs qpdf)
 ```
 
 1. **`build_interleaved.py`** appends one interleaved page per verse at the *tail*

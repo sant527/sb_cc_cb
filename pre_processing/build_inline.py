@@ -17,10 +17,11 @@ from pathlib import Path
 
 import fitz
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # for `reader`
 from interleave import classify_lines, draw_enlarged_sloka
 from reader import Index
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parent.parent   # PDFs live in the project root
 SRC = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf"
 CUR = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_interleaved.pdf"          # tail build (reuse)
 CUR_SIDE = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_interleaved.pages.json"

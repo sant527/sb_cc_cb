@@ -14,9 +14,10 @@ from pathlib import Path
 
 import fitz
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # for `reader`
 from reader import Index, readable
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parent.parent   # PDFs live in the project root
 ORIG = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf"
 INLINE = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline.pdf"
 INLINE_SIDE = INLINE.with_suffix(".pages.json")

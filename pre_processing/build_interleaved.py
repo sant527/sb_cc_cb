@@ -15,10 +15,11 @@ from pathlib import Path
 
 import fitz
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))   # for `reader`
 from interleave import draw_interleaved, is_transformable
 from reader import Index
 
-HERE = Path(__file__).parent
+HERE = Path(__file__).resolve().parent.parent   # PDFs live in the project root
 SRC = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf"
 OUT = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_interleaved.pdf"
 SIDE = OUT.with_suffix(".pages.json")
