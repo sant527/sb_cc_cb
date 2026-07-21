@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.5.1",
-    "pikepdf>=10.10.0",
     "pymupdf>=1.28.0",
     "pyqt6>=6.11.0",
 ]
