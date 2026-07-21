@@ -953,6 +953,27 @@ class Reader(QMainWindow):
         else:
             self.bookmark_list.hide()
 
+    # -- save page ----------------------------------------------------------
+
+    def save_page(self) -> None:
+        """p -> save the current page as a PNG in Downloads/, named by the verse."""
+        i = self._current_verse()
+        label = self.index.entries[i].label if i is not None else f"page_{self.page}"
+        base = re.sub(r"[^\w.-]+", "_", label).strip("_") or f"page_{self.page}"
+        dl = Path(__file__).resolve().parent / "Downloads"
+        dl.mkdir(exist_ok=True)
+        path = dl / f"{base}.png"
+        n = 2
+        while path.exists():                      # don't overwrite earlier saves
+            path = dl / f"{base}_{n}.png"
+            n += 1
+        try:
+            pix = self.doc[self.page - 1].get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
+            pix.save(str(path))
+            self._toast(f"Saved\n{path.name}")
+        except (OSError, RuntimeError) as ex:
+            self._toast(f"Save failed\n{ex}")
+
     def step_translation(self, delta: int) -> None:
         """Move one verse forward/back, staying in the current nav mode."""
         i = self._current_verse()
@@ -1153,6 +1174,8 @@ class Reader(QMainWindow):
                 self.open_scope()
             case Qt.Key.Key_C:
                 self.view.centre_h()
+            case Qt.Key.Key_P:
+                self.save_page()
             case Qt.Key.Key_S:
                 self.cycle_mode()
             case Qt.Key.Key_T:
