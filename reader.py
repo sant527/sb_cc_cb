@@ -203,6 +203,7 @@ class Index:
     def __init__(self, entries: list[Translation]) -> None:
         self.entries = entries
         self.pages = [e.page for e in entries]           # sorted, for bisect
+        self._refs = [self._parse_ref(e.label) for e in entries]   # (book, number)
         # interleaved pages live at the tail of the PDF -> explicit page->verse maps
         # so paging can treat one as if it sat right after its sloka page
         self.inter_to_i = {e.interleaved: i for i, e in enumerate(entries)
@@ -310,18 +311,37 @@ class Index:
             m.append(2)
         return m
 
+    @staticmethod
+    def _parse_ref(text: str) -> tuple[str, str]:
+        """'SB 1.1.6 / 23' -> ('sb', '1.1.6'); 'madhya 20.268' -> ('madhya', '20.268')."""
+        ref = text.lower().strip().split(" /")[0].strip()
+        m = re.match(r"([a-z]+)?\s*([\d][\d.\-]*)?$", ref)
+        return (m.group(1) or "", m.group(2) or "") if m else (ref, "")
+
     def search(self, query: str, limit: int = 200) -> list[Translation]:
-        q = query.lower().strip()
+        q = query.strip()
         if not q:
             return []
-        terms = q.split()
+        qbook, qnum = self._parse_ref(q)
+        if not qbook and not qnum:                    # unparseable -> substring fallback
+            ql = q.lower()
+            return [e for e in self.entries if ql in e.label.lower()][:limit]
         out = []
-        for e in self.entries:
-            hay = e.label.lower()
-            if all(t in hay for t in terms):
-                out.append(e)
-                if len(out) >= limit:
-                    break
+        for i, e in enumerate(self.entries):
+            book, num = self._refs[i]
+            if qbook and not book.startswith(qbook):  # partial book ok (mad -> madhya)
+                continue
+            if qnum:
+                # the number reference must *start with* the query at a dot/dash/end
+                # boundary, so "1.1" matches "1.1.6" but not "11.1.1" or "1.10.14".
+                if not num.startswith(qnum):
+                    continue
+                rest = num[len(qnum):]
+                if rest and rest[0].isdigit():
+                    continue
+            out.append(e)
+            if len(out) >= limit:
+                break
         return out
 
 
