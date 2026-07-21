@@ -24,6 +24,24 @@ The reader opens whichever it finds, preferring the interleaved one.
 
 ## Run
 
+This uses [uv](https://docs.astral.sh/uv/) to manage everything — on first launch
+`uv run` downloads the right Python (3.12+, pinned in `.python-version`) *and*
+installs the dependencies, so **`uv` is the only thing you need** — no separate
+Python install. If you don't have `uv`, install it once:
+
+```sh
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# macOS (Homebrew)
+brew install uv
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# or, if you already have Python/pip
+pip install uv
+```
+
+Then run the reader:
+
 ```sh
 uv run python reader.py
 ```
