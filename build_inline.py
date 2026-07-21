@@ -102,6 +102,14 @@ def main():
         {"pdf": OUT.name, "pages": total, "layout": "inline", "entries": entries}))
     log(f"wrote {OUT_SIDE.name}")
 
+    # working outline: original bookmarks remapped + a jump-to-enhanced per verse
+    from add_outline import build_toc
+    toc, n_jump = build_toc()
+    doc = fitz.open(OUT)
+    doc.set_toc(toc)
+    doc.saveIncr()
+    log(f"outline: {len(toc):,} entries ({n_jump:,} verse jump-to-enhanced)")
+
     chk = fitz.open(OUT)
     log(f"output pages: {chk.page_count:,} (expected {total:,})")
     assert chk.page_count == total, (chk.page_count, total)

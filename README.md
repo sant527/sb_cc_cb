@@ -134,7 +134,7 @@ transliteration), so they get no enhanced page.
 
 ```sh
 uv run python build_interleaved.py   # 1) draw the interleaved pages (~35 min)
-uv run python build_inline.py        # 2) splice everything inline (~2 min, needs qpdf)
+uv run python build_inline.py        # 2) splice inline + add outline (~2 min, needs qpdf)
 ```
 
 1. **`build_interleaved.py`** appends one interleaved page per verse at the *tail*
@@ -144,7 +144,12 @@ uv run python build_inline.py        # 2) splice everything inline (~2 min, need
 2. **`build_inline.py`** produces the **shippable** `…_inline.pdf` (≈693 MB,
    250,298 pages): it reuses those interleaved pages, draws the enlarged-sloka
    fallbacks, and uses **qpdf** to splice each enhanced page physically after its
-   sloka — so the book reads sloka → enhanced → purport in *any* PDF viewer.
+   sloka — so the book reads sloka → enhanced → purport in *any* PDF viewer. It
+   also rebuilds the outline (bookmarks / table of contents), which qpdf drops:
+   the original canto → chapter → verse tree with corrected page numbers, plus a
+   `» interleaved` entry under each verse that jumps to its enhanced page. So the
+   shipped PDF is self-contained — pages in order **and** a working table of
+   contents, no app or sidecar needed.
    (`brew install qpdf` / `apt install qpdf`. PyMuPDF and pikepdf both assemble a
    250k-page tree in O(n²) — hours; qpdf does it by reference in ~2 min.)
 
