@@ -30,7 +30,7 @@ installs the dependencies, so **`uv` is the only thing you need** — no separat
 Python install. If you don't have `uv`, install it once:
 
 ```sh
-# macOS / Linux
+# macOS / Linux (recommended — a standalone binary, needs no Python)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # macOS (Homebrew)
 brew install uv
@@ -38,6 +38,20 @@ brew install uv
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 # or, if you already have Python/pip
 pip install uv
+```
+
+The `curl` installer drops `uv` in `~/.local/bin`. After it finishes, open a new
+terminal — or reload your shell so it's on your `PATH`:
+
+```sh
+source ~/.bashrc     # Ubuntu / most Linux
+source ~/.zshrc      # macOS
+```
+
+Check it worked:
+
+```sh
+uv --version
 ```
 
 Then run the reader:
