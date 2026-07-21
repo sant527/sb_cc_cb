@@ -243,6 +243,13 @@ class Index:
                 c = cls._clean(title)
                 if c:
                     chapter = c
+            elif level == 3:
+                # CC/CB keep the real chapter title ("Madhya 20: …", "MAD 23: …")
+                # at level 3, above only the khanda; use it when it looks like one
+                # (SB's level 3 is structural — SLOKAS / PURPORT / (BR)--- — skip).
+                c = cls._clean(title)
+                if re.match(r"^\S+\s+\d+:\s+\S", c):
+                    chapter = c
             elif level == 4:
                 label = cls._clean(title)
                 last = Translation(page, label, chapter,
@@ -267,7 +274,7 @@ class Index:
 
         cache = pdf.with_suffix(".index.json")
         stat = pdf.stat()
-        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 5}
+        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 6}
 
         if cache.exists():
             try:
