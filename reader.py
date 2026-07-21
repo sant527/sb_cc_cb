@@ -969,7 +969,11 @@ class Reader(QMainWindow):
             n += 1
         try:
             pix = self.doc[self.page - 1].get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
-            pix.save(str(path))
+            # colour it with the current theme + brightness, exactly like the view
+            arr = np.ascontiguousarray(self.view._recolour(pix))
+            img = QImage(arr.data, pix.width, pix.height, pix.width * 3,
+                         QImage.Format.Format_RGB888)
+            img.save(str(path))
             self._toast(f"Saved\n{path.name}")
         except (OSError, RuntimeError) as ex:
             self._toast(f"Save failed\n{ex}")
