@@ -969,13 +969,13 @@ class Reader(QMainWindow):
     def keyPressEvent(self, e: QKeyEvent) -> None:
         k = e.key()
 
-        # Shift + Up/Down scrolls the current page (for tall pages); adding
-        # Ctrl (Meta on macOS) makes it a fine scroll (a third as far). Above the
-        # plain-arrow nav and the auto-repeat guard so holding it scrolls smoothly.
+        # Shift + Up/Down scrolls the current page a little (fine); adding
+        # Ctrl (Meta on macOS) scrolls the larger amount. Above the plain-arrow
+        # nav and the auto-repeat guard so holding it scrolls smoothly.
         mods = e.modifiers()
         if mods & Qt.KeyboardModifier.ShiftModifier and k in (
                 Qt.Key.Key_Up, Qt.Key.Key_Down):
-            fine = bool(mods & (Qt.KeyboardModifier.ControlModifier
+            fine = not (mods & (Qt.KeyboardModifier.ControlModifier
                                 | Qt.KeyboardModifier.MetaModifier))
             self.view.scroll_by(-1 if k == Qt.Key.Key_Up else +1, fine=fine)
             return

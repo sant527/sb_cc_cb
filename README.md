@@ -115,8 +115,9 @@ Forward is **down / right**.
 | `↑` | previous translation |
 | `→` | **next** page |
 | `←` | previous page |
-| mouse wheel · `Shift`+`↑`/`↓` | scroll within the page |
-| `Shift`+`Ctrl`+`↑`/`↓` | fine scroll (⅓ as far) |
+| mouse wheel | scroll within the page |
+| `Shift`+`↑`/`↓` | fine scroll |
+| `Shift`+`Ctrl`+`↑`/`↓` | scroll more (3×) |
 | `Enter` | **random** verse (from the chosen scope, in the current nav mode) |
 | `r` | choose which cantos/sections `Enter` draws from |
 | `s` | cycle nav mode: translation → sloka → interleaved |
