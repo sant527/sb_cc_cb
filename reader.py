@@ -921,7 +921,7 @@ class Reader(QMainWindow):
         for label, mode in self.bookmarks:
             i = self.index.by_label.get(label)
             chapter = self.index.entries[i].chapter if i is not None else ""
-            rows.append(f"{label}  ·  {MODE_NAMES[mode]}\n{chapter}")
+            rows.append(f"{label}  ·  {chapter}")
         return rows
 
     def open_bookmarks(self) -> None:
