@@ -955,11 +955,15 @@ class Reader(QMainWindow):
 
     # -- save page ----------------------------------------------------------
 
-    def save_page(self) -> None:
-        """p -> save the current page as a PNG in Downloads/, named by the verse."""
+    def save_page(self, crop: bool = False) -> None:
+        """Save the current page as a PNG in Downloads/, named by the verse, in the
+        current theme. `p` keeps the full page; `Shift+P` crops the empty space at
+        the bottom."""
         i = self._current_verse()
         label = self.index.entries[i].label if i is not None else f"page_{self.page}"
         base = re.sub(r"[^\w.-]+", "_", label).strip("_") or f"page_{self.page}"
+        if crop:
+            base += "_crop"
         dl = Path(__file__).resolve().parent / "Downloads"
         dl.mkdir(exist_ok=True)
         path = dl / f"{base}.png"
@@ -968,11 +972,20 @@ class Reader(QMainWindow):
             path = dl / f"{base}_{n}.png"
             n += 1
         try:
-            pix = self.doc[self.page - 1].get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
+            zoom = 3
+            pix = self.doc[self.page - 1].get_pixmap(matrix=fitz.Matrix(zoom, zoom),
+                                                     alpha=False)
             # colour it with the current theme + brightness, exactly like the view
             arr = np.ascontiguousarray(self.view._recolour(pix))
-            img = QImage(arr.data, pix.width, pix.height, pix.width * 3,
-                         QImage.Format.Format_RGB888)
+            if crop:                              # drop trailing empty rows (+margin)
+                paper = np.array(self.view.paper, dtype=np.int16)
+                has_ink = (np.abs(arr.astype(np.int16) - paper).max(2) > 24).any(1)
+                rows = np.nonzero(has_ink)[0]
+                if len(rows):
+                    bottom = min(arr.shape[0], int(rows[-1]) + 12 * zoom)
+                    arr = np.ascontiguousarray(arr[:bottom])
+            h, w = arr.shape[:2]
+            img = QImage(arr.data, w, h, w * 3, QImage.Format.Format_RGB888)
             img.save(str(path))
             self._toast(f"Saved\n{path.name}")
         except (OSError, RuntimeError) as ex:
@@ -1171,6 +1184,10 @@ class Reader(QMainWindow):
                 else self.toggle_bookmark()
             return
 
+        if k == Qt.Key.Key_P:               # p = save page, Shift+P = save cropped
+            self.save_page(crop=bool(mods & Qt.KeyboardModifier.ShiftModifier))
+            return
+
         match k:
             case Qt.Key.Key_Return | Qt.Key.Key_Enter:
                 self.random_translation()
@@ -1178,8 +1195,6 @@ class Reader(QMainWindow):
                 self.open_scope()
             case Qt.Key.Key_C:
                 self.view.centre_h()
-            case Qt.Key.Key_P:
-                self.save_page()
             case Qt.Key.Key_S:
                 self.cycle_mode()
             case Qt.Key.Key_T:

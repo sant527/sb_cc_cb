@@ -127,7 +127,8 @@ Forward is **down / right**.
 | `⌘.` / `⌘,` | brighter / dimmer (hold to ramp) |
 | `i` | show / hide the status bar (hidden by default) |
 | `g` or `/` | jump to a verse |
-| `p` | save this page (in the current theme) as a PNG in `Downloads/`, named by verse |
+| `p` | save this page (current theme) as a PNG in `Downloads/`, named by verse |
+| `Shift`+`P` | same, but crop the empty space at the bottom |
 | `b` | bookmark this verse (press again to remove) |
 | `Shift`+`B` | bookmark list — recent first; Enter opens, Del removes |
 | `w` | fit to width |
