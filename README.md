@@ -30,7 +30,7 @@ precious.
 | File | Size | Purpose | Safe to delete? |
 | --- | --- | --- | --- |
 | `*.state.json` | ~100 B | your bookmark + preferences | yes |
-| `*.pages.json` | ~3 MB | the map of the book | only if you can re-run the build |
+| `*.pages.json` | ~3 MB | the map of the book (optional for the inline PDF) | see below |
 | `*.index.json` | ~3 MB | cached outline parse | yes |
 
 **`*.state.json` — so the app remembers you.** Its whole purpose is continuity
@@ -53,8 +53,12 @@ sloka / interleaved page (`-1` where a verse has none). This is what makes `s`,
    58,520 bookmarks, but that costs ~2 s every launch. Reading flat JSON is
    instant.
 
-So it's the bridge between the build and the reader. Regenerable, but only by
-re-running the ~33 min build.
+So it's the bridge between the build and the reader — **except for the inline
+PDF**, which carries the same information in its outline (the `»` bookmark under
+each verse). The reader reads that when no sidecar is present, so the inline PDF
+works fully in the app *and* in any viewer with just the `.pdf` — no sidecar
+needed. (The sidecar, if kept, just skips a ~2 s outline parse at startup.) The
+*tail* `…_interleaved.pdf` still needs its sidecar, since its outline is stale.
 
 **`*.index.json` — the fallback.** The older cache, built by parsing the PDF
 outline (~2 s) the first time a PDF is opened. Used for the original PDF, which

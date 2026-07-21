@@ -230,8 +230,13 @@ class Index:
 
     @classmethod
     def build(cls, doc: fitz.Document) -> "Index":
+        """Build the index from the PDF outline. Level-4 entries are verse
+        translations; a following level-5 `»` entry (added to the inline PDF by
+        add_outline.py) is that verse's enhanced page — so the inline PDF is
+        self-describing and needs no sidecar."""
         entries: list[Translation] = []
         chapter = ""
+        last: Translation | None = None
         for level, title, page in doc.get_toc():
             if level <= 2:
                 c = cls._clean(title)
@@ -239,8 +244,11 @@ class Index:
                     chapter = c
             elif level == 4:
                 label = cls._clean(title)
-                entries.append(Translation(page, label, chapter,
-                                           Translation.sloka_page(label, page)))
+                last = Translation(page, label, chapter,
+                                   Translation.sloka_page(label, page))
+                entries.append(last)
+            elif level == 5 and last is not None and title.lstrip().startswith("»"):
+                last.interleaved = page          # the verse's enhanced page
         entries.sort(key=lambda e: e.page)
         return cls(entries)
 
@@ -258,7 +266,7 @@ class Index:
 
         cache = pdf.with_suffix(".index.json")
         stat = pdf.stat()
-        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 3}
+        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 4}
 
         if cache.exists():
             try:
