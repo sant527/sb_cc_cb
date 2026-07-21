@@ -19,7 +19,7 @@ from reader import Index, readable
 
 HERE = Path(__file__).resolve().parent.parent   # PDFs live in the project root
 ORIG = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf"
-INLINE = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline.pdf"
+INLINE = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf"
 INLINE_SIDE = INLINE.with_suffix(".pages.json")
 TAIL_SIDE = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_interleaved.pages.json"
 

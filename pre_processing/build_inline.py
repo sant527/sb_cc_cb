@@ -27,7 +27,7 @@ CUR = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_interleaved.pdf"          # tail 
 CUR_SIDE = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_interleaved.pages.json"
 EXTRA = HERE / ".enlarged_pages.pdf"                                     # scratch
 ARGFILE = HERE / ".qpdf_args.txt"                                        # scratch
-OUT = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline.pdf"
+OUT = HERE / "SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf"
 OUT_SIDE = OUT.with_suffix(".pages.json")
 
 

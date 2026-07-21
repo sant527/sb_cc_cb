@@ -1,9 +1,13 @@
 # pre_processing — regenerate the interleaved PDF
 
 These scripts build the shippable **inline** PDF
-(`SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline.pdf`) from the **original** book. The
+(`SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf`) from the **original** book. The
 reader (`../reader.py`) does not need them — they only produce the PDF. Run this
 if the inline PDF is ever lost.
+
+> **Shortcut:** the finished PDF is also on Google Drive, so you can just download
+> it instead of rebuilding:
+> <https://drive.google.com/file/d/1k3LtAIs6cjga4e4uxo07PJLQmUgX9q8l/view?usp=drive_link>
 
 Everything runs from the **project root** (the parent of this folder), and every
 file lives there — the scripts just live in `pre_processing/`.
@@ -32,7 +36,7 @@ uv run python pre_processing/build_interleaved.py   # 1) draw the pages   (~35 m
 uv run python pre_processing/build_inline.py        # 2) splice + outline (~3 min)
 ```
 
-That's it — the result is `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline.pdf`
+That's it — the result is `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf`
 (≈693 MB, 250,302 pages), self-contained: pages in reading order **and** a
 working outline. Ship just that `.pdf`; nothing else is required.
 
@@ -57,7 +61,7 @@ working outline. Ship just that `.pdf`; nothing else is required.
 
 ### `add_outline.py` (standalone)
 
-Rebuilds the outline on an existing `…_inline.pdf` (~10 s, incremental save).
+Rebuilds the outline on an existing `…_inline_interleaved.pdf` (~10 s, incremental save).
 `build_inline.py` calls it automatically; run it directly only to refresh the
 bookmarks without rebuilding the PDF:
 
@@ -70,7 +74,7 @@ uv run python pre_processing/add_outline.py
 | File | From | Keep? |
 | --- | --- | --- |
 | `…_interleaved.pdf` + `.pages.json` | step 1 | needed by step 2; deletable after |
-| `…_inline.pdf` + `.pages.json` | step 2 | **the deliverable** |
+| `…_inline_interleaved.pdf` + `.pages.json` | step 2 | **the deliverable** |
 | `.enlarged_pages.pdf`, `.qpdf_args.txt` | step 2 scratch | auto-removed |
 
 The inline PDF's `.pages.json` is optional — the app can rebuild its index from

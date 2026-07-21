@@ -1,17 +1,26 @@
 # SB · CC · CB Reader
 
-A desktop reader for `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf` — the same navigation
+A desktop reader for `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf` — the same navigation
 model as the Android app, built on the same engine (MuPDF, via PyMuPDF).
 
 Runs on macOS and Linux.
 
 ## The PDF
 
-The book itself (`SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf`, ~538 MB) is **not** in
-this repo — it is far past GitHub's file-size limit. Download it and drop it in
-the project root next to `reader.py`:
+The PDFs are **not** in this repo (far past GitHub's file-size limit). Download
+one from Google Drive and drop it in the project root next to `reader.py`:
 
-<https://drive.google.com/file/d/186cFWCiBbdWzaIP6EMdEyM1cqCSW-qX5/view?usp=drive_link>
+- **Ready-to-use interleaved book** — `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf`
+  (~700 MB, 250,302 pages). The finished, shippable file: pages in reading order
+  with the interleaved/enhanced page after each sloka, plus a working outline.
+  Just download and run — nothing else needed.
+  <https://drive.google.com/file/d/1k3LtAIs6cjga4e4uxo07PJLQmUgX9q8l/view?usp=drive_link>
+
+- **Original source book** — `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021.pdf` (~538 MB).
+  Only needed to *regenerate* the interleaved PDF (see [`pre_processing/`](pre_processing/)).
+  <https://drive.google.com/file/d/186cFWCiBbdWzaIP6EMdEyM1cqCSW-qX5/view?usp=drive_link>
+
+The reader opens whichever it finds, preferring the interleaved one.
 
 ## Run
 
@@ -149,7 +158,7 @@ uv run python pre_processing/build_inline.py       # 2) splice inline + add outl
    of the PDF and writes `…_interleaved.pdf` + a sidecar. Fast to write
    (incremental save) but the enhanced pages aren't in reading order — fine for
    this reader (it uses the sidecar), wrong for a plain PDF viewer.
-2. **`build_inline.py`** produces the **shippable** `…_inline.pdf` (≈693 MB,
+2. **`build_inline.py`** produces the **shippable** `…_inline_interleaved.pdf` (≈693 MB,
    250,302 pages): it reuses those interleaved pages, draws the enlarged-sloka
    fallbacks, and uses **qpdf** to splice each enhanced page physically after its
    sloka — so the book reads sloka → enhanced → purport in *any* PDF viewer. It
@@ -161,7 +170,7 @@ uv run python pre_processing/build_inline.py       # 2) splice inline + add outl
    (`brew install qpdf` / `apt install qpdf`. PyMuPDF and pikepdf both assemble a
    250k-page tree in O(n²) — hours; qpdf does it by reference in ~2 min.)
 
-The reader opens `…_inline.pdf` if present, else `…_interleaved.pdf`, else the
+The reader opens `…_inline_interleaved.pdf` if present, else `…_interleaved.pdf`, else the
 original. Each build writes its own `.pages.json` sidecar mapping every verse to
 its translation / sloka / enhanced page.
 

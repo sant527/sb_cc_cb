@@ -1048,7 +1048,7 @@ def main() -> int:
         # build, then the plain original
         here = Path(__file__).parent
         pdf = here / PDF_NAME
-        for variant in ("_inline.pdf", "_interleaved.pdf"):
+        for variant in ("_inline_interleaved.pdf", "_inline.pdf", "_interleaved.pdf"):
             cand = here / PDF_NAME.replace(".pdf", variant)
             if cand.exists():
                 pdf = cand
