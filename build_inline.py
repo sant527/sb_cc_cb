@@ -17,7 +17,7 @@ from pathlib import Path
 
 import fitz
 
-from interleave import classify_lines, draw_enlarged_sloka, is_transformable
+from interleave import classify_lines, draw_enlarged_sloka
 from reader import Index
 
 HERE = Path(__file__).parent
@@ -41,15 +41,21 @@ def main():
     cur_side = json.loads(CUR_SIDE.read_text())
     inter_tail = {e[3] - 1: e[4] - 1 for e in cur_side["entries"] if e[4] > 0}  # sloka0 -> tail0
 
+    # Every SB verse gets an enhanced page after its sloka, so the order is
+    # uniform (sloka -> enhanced). The enhanced page is, in priority:
+    #   interleaved (reused from CUR) > enlarged Devanagari (drawn) >
+    #   a copy of the sloka page (the few SB verses printed only in transliteration)
     sb = [e for e in idx.entries if e.label.startswith("SB ")]
     log(f"scanning {len(sb):,} SB verses...")
-    enlarged = []
+    enlarged, dup = [], []
     for e in sb:
         s = e.sloka - 1
         if s in inter_tail:
             continue
-        if classify_lines(src[s])[0] and not is_transformable(src, s):
+        if classify_lines(src[s])[0]:                       # has Devanagari -> enlarge
             enlarged.append(s)
+        else:                                               # no Devanagari -> copy sloka
+            dup.append(s)
     enlarged.sort()
 
     extra = fitz.open()
@@ -59,21 +65,27 @@ def main():
         draw_enlarged_sloka(pg, src, s)
         extra_rank[s] = j
     extra.save(str(EXTRA))
-    log(f"interleaved (reused): {len(inter_tail):,}  |  enlarged (drawn): {len(extra_rank):,}")
+    log(f"interleaved (reused): {len(inter_tail):,}  |  enlarged (drawn): "
+        f"{len(extra_rank):,}  |  sloka-copy: {len(dup):,}")
 
-    enhanced = sorted(set(inter_tail) | set(extra_rank))   # 0-indexed sloka pages
+    # source of each verse's enhanced page (file, 1-indexed page)
+    source = {}
+    for s, tp in inter_tail.items():
+        source[s] = (str(CUR), tp + 1)
+    for s, r in extra_rank.items():
+        source[s] = (str(EXTRA), r + 1)
+    for s in dup:
+        source[s] = (str(SRC), s + 1)                       # the sloka page itself
+    enhanced = sorted(source)
     N_orig = src.page_count
 
-    # qpdf --pages job: alternate runs of the original with each enhanced page,
-    # pulled from CUR (interleaved) or EXTRA (enlarged). 1-indexed page numbers.
+    # qpdf --pages job: alternate runs of the original with each enhanced page.
     toks = []
-    prev = 0                                    # 0-indexed next original page to emit
+    prev = 0
     for s in enhanced:
         toks += [str(SRC), f"{prev + 1}-{s + 1}"]           # originals up to & incl sloka
-        if s in inter_tail:
-            toks += [str(CUR), str(inter_tail[s] + 1)]
-        else:
-            toks += [str(EXTRA), str(extra_rank[s] + 1)]
+        f, pg = source[s]
+        toks += [f, str(pg)]
         prev = s + 1
     toks += [str(SRC), f"{prev + 1}-{N_orig}"]              # tail originals
     ARGFILE.write_text("\n".join(toks) + "\n")
@@ -113,7 +125,7 @@ def main():
     chk = fitz.open(OUT)
     log(f"output pages: {chk.page_count:,} (expected {total:,})")
     assert chk.page_count == total, (chk.page_count, total)
-    for lab in ("SB 1.2.1", "SB 1.1.6", "SB 10.44.6", "Madhya 20.268"):
+    for lab in ("SB 1.2.1", "SB 1.1.6", "SB 10.44.6", "SB 10.8.1", "Madhya 20.268"):
         e = next(x for x in entries if x[1].startswith(lab + " "))
         if e[4] > 0:
             role = chk[e[4]-1].get_text()[:32].replace("\n", " ")

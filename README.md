@@ -146,7 +146,7 @@ uv run python build_inline.py        # 2) splice inline + add outline (~2 min, n
    (incremental save) but the enhanced pages aren't in reading order — fine for
    this reader (it uses the sidecar), wrong for a plain PDF viewer.
 2. **`build_inline.py`** produces the **shippable** `…_inline.pdf` (≈693 MB,
-   250,298 pages): it reuses those interleaved pages, draws the enlarged-sloka
+   250,302 pages): it reuses those interleaved pages, draws the enlarged-sloka
    fallbacks, and uses **qpdf** to splice each enhanced page physically after its
    sloka — so the book reads sloka → enhanced → purport in *any* PDF viewer. It
    also rebuilds the outline (bookmarks / table of contents), which qpdf drops:
@@ -263,19 +263,15 @@ rounding:
 | SB verses total | **13,004** |
 | interleaved | 12,653 |
 | enlarged-sloka fallback | 347 |
-| **enhanced pages** | **13,000** |
-| no enhanced page | **4** |
+| sloka-copy | 4 |
+| **enhanced pages** | **13,004** |
 
-The 4 without one — **SB 10.8.1, 10.8.17, 10.8.28, 10.11.21** — have no Devanagari
-at all on their page in the source PDF. What's actually printed on SB 10.8.1's
-sloka page is transliteration only:
-
-```
-… SB 10.8.1 / 52   çré-çuka uväca   gargaù purohito räjan …
-```
-
-With no Devanagari to interleave or enlarge, they get no enhanced page. It's a
-gap in the source edition, not something the build dropped.
+Every SB verse gets an enhanced page after its sloka, so the order is uniform
+(sloka → enhanced) with no gaps. Four verses — **SB 10.8.1, 10.8.17, 10.8.28,
+10.11.21** — have no Devanagari at all in the source (their verse is printed only
+in transliteration, e.g. `çré-çuka uväca gargaù purohito räjan …`). With nothing
+to interleave or enlarge, their enhanced page is just a copy of the sloka page,
+so the sloka → enhanced pattern still holds.
 
 ### The 347 enlarged-sloka verses
 
