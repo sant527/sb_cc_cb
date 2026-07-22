@@ -159,7 +159,9 @@ remembered between runs.
 1. **Translation** — the English translation page (default)
 2. **Sloka** — the Sanskrit verse page
 3. **Interleaved** — a page where each transliteration pada is paired with its
-   enlarged Devanagari (SB only; see below)
+   enlarged Devanagari (SB only; see below). For one-pada/line verses this is the
+   compact **clubbed** page (two padas per line); press `→` for the enlarged
+   1-pada/line version right after it.
 
 The status bar shows `SLOKA` / `INTERLEAVED` when you're on one, and the mode is
 remembered between runs. `s` skips modes a verse doesn't have: CC/CB print verse
@@ -181,7 +183,24 @@ An enhanced page is added for every SB verse, right after its sloka:
 CC/CB verses have no Devanagari in this edition (the verse is printed only in
 transliteration), so they get no enhanced page.
 
-### Building it — two steps
+**Clubbed pages.** The 6,980 verses whose Devanagari is one-pada-per-line (see
+[pada packing](#pada-packing--one-line-vs-two-per-line) — mostly cantos 10-12)
+also get a **clubbed** page: two padas side by side per line, the traditional
+couplet layout (`interleave.draw_clubbed`, added by
+[add_clubbed.py](pre_processing/add_clubbed.py)). It's more compact — the two
+padas share the line, so the Devanagari shrinks to fit — and it becomes the
+verse's **primary** enhanced page (what interleaved mode jumps to). The enlarged
+1-pada/line page stays right after it as the "read large" page, so the order is:
+
+```
+sloka → clubbed (compact, 2 padas/line) → large (enlarged, 1 pada/line)
+```
+
+Press `→` on the clubbed page to reach the large one. In the outline these are a
+`» clubbed` and a `»» read large` child under the verse; verses that aren't
+clubbed keep their single `» interleaved` / `» enlarged sloka` child.
+
+### Building it — three steps
 
 The reader (`reader.py`) is standalone; the build scripts live in
 [`pre_processing/`](pre_processing/) and are only needed to (re)generate the PDF.
@@ -189,28 +208,36 @@ The reader (`reader.py`) is standalone; the build scripts live in
 
 ```sh
 uv run python pre_processing/build_interleaved.py   # 1) draw the interleaved pages (~35 min)
-uv run python pre_processing/build_inline.py       # 2) splice inline + add outline (~2 min, needs qpdf)
+uv run python pre_processing/build_inline.py        # 2) splice inline + add outline (~2 min, needs qpdf)
+uv run python pre_processing/add_clubbed.py         # 3) add clubbed pages (~10 min, needs qpdf)
 ```
 
 1. **`build_interleaved.py`** appends one interleaved page per verse at the *tail*
    of the PDF and writes `…_interleaved.pdf` + a sidecar. Fast to write
    (incremental save) but the enhanced pages aren't in reading order — fine for
    this reader (it uses the sidecar), wrong for a plain PDF viewer.
-2. **`build_inline.py`** produces the **shippable** `…_inline_interleaved.pdf` (≈693 MB,
-   250,302 pages): it reuses those interleaved pages, draws the enlarged-sloka
-   fallbacks, and uses **qpdf** to splice each enhanced page physically after its
-   sloka — so the book reads sloka → enhanced → purport in *any* PDF viewer. It
-   also rebuilds the outline (bookmarks / table of contents), which qpdf drops:
-   the original canto → chapter → verse tree with corrected page numbers, plus a
-   `» interleaved` entry under each verse that jumps to its enhanced page. So the
-   shipped PDF is self-contained — pages in order **and** a working table of
-   contents, no app or sidecar needed.
-   (`brew install qpdf` / `apt install qpdf`. PyMuPDF and pikepdf both assemble a
-   250k-page tree in O(n²) — hours; qpdf does it by reference in ~2 min.)
+2. **`build_inline.py`** produces the inline `…_inline_interleaved.pdf`
+   (≈693 MB, 250,302 pages): it reuses those interleaved pages, draws the
+   enlarged-sloka fallbacks, and uses **qpdf** to splice each enhanced page
+   physically after its sloka — so the book reads sloka → enhanced → purport in
+   *any* PDF viewer. It also rebuilds the outline (bookmarks / table of contents),
+   which qpdf drops: the original canto → chapter → verse tree with corrected page
+   numbers, plus a `» interleaved` entry under each verse that jumps to its
+   enhanced page.
+3. **`add_clubbed.py`** adds the **clubbed** couplet page to each one-pada/line
+   verse — again by drawing the pages and letting qpdf splice each in right after
+   its sloka (before the enlarged page). It rebuilds the outline with the
+   `» clubbed` / `»» read large` children. The result is the **shippable**
+   `…_inline_interleaved.pdf` (≈762 MB, 257,282 pages), self-contained — pages in
+   order **and** a working table of contents, no app or sidecar needed.
+
+(`brew install qpdf` / `apt install qpdf`. PyMuPDF and pikepdf both assemble a
+250k-page tree in O(n²) — hours; qpdf does it by reference in a few minutes.)
 
 The reader opens `…_inline_interleaved.pdf` if present, else `…_interleaved.pdf`, else the
-original. Each build writes its own `.pages.json` sidecar mapping every verse to
-its translation / sloka / enhanced page.
+original. Steps 1-2 each write a `.pages.json` sidecar; step 3 removes it (the
+clubbed outline is self-describing), so the shipped inline PDF navigates from its
+own outline.
 
 ## Colours
 
@@ -323,6 +350,36 @@ Every SB verse gets an enhanced page after its sloka, so the order is uniform
 in transliteration, e.g. `çré-çuka uväca gargaù purohito räjan …`). With nothing
 to interleave or enlarge, their enhanced page is just a copy of the sloka page,
 so the sloka → enhanced pattern still holds.
+
+### Pada packing — one line vs two per line
+
+How the source lays out each verse's Devanagari decides how the interleaved page
+looks. Some verses print **one pada per Devanagari line**; others already **pack
+two padas per line**. Of the 13,004 SB verses:
+
+| Devanagari layout | count | interleaved result |
+| --- | ---: | --- |
+| **1 pada / line** | **7,114** | one pada above its enlarged 1.5× Devanagari, stacked |
+| 2 padas / line | 5,536 | the two padas sit side by side (already "clubbed") |
+| not line-pairable (enlarged fallback) | 351 | whole Devanagari block enlarged, not paired |
+| 3 padas / line | 2 | three padas side by side |
+| other | 1 | — |
+
+The 1-pada/line verses are the ones that can be **clubbed** into the traditional
+two-padas-per-line couplet layout (they aren't packed that way in the source).
+They cluster in the RM-Devanagari cantos:
+
+| canto | 1 / line | 2 / line | | canto | 1 / line | 2 / line |
+| ---: | ---: | ---: | --- | ---: | ---: | ---: |
+| 1 | 176 | 596 | | 7 | 148 | 517 |
+| 2 | 136 | 229 | | 8 | 215 | 622 |
+| 3 | 368 | 1,010 | | 9 | 64 | 771 |
+| 4 | 308 | 1,064 | | **10** | **3,506** | 55 |
+| 5 | 331 | 85 | | **11** | **1,241** | 0 |
+| 6 | 144 | 588 | | **12** | 477 | 1 |
+
+Cantos 10–12 are almost entirely one-pada-per-line (5,224 of the 7,114); cantos
+1–9 are mostly packed two-per-line already.
 
 ### The 347 enlarged-sloka verses
 

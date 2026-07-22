@@ -29,15 +29,16 @@ file lives there — the scripts just live in `pre_processing/`.
 
 3. Python deps are in `pyproject.toml` — `uv run` installs them automatically.
 
-## Regenerate (two steps, from the project root)
+## Regenerate (three steps, from the project root)
 
 ```sh
-uv run python pre_processing/build_interleaved.py   # 1) draw the pages   (~35 min)
-uv run python pre_processing/build_inline.py        # 2) splice + outline (~3 min)
+uv run python pre_processing/build_interleaved.py   # 1) draw the pages    (~35 min)
+uv run python pre_processing/build_inline.py        # 2) splice + outline  (~3 min)
+uv run python pre_processing/add_clubbed.py         # 3) add clubbed pages (~10 min)
 ```
 
 That's it — the result is `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf`
-(≈693 MB, 250,302 pages), self-contained: pages in reading order **and** a
+(≈762 MB, 257,282 pages), self-contained: pages in reading order **and** a
 working outline. Ship just that `.pdf`; nothing else is required.
 
 ### What each step does
@@ -58,6 +59,14 @@ working outline. Ship just that `.pdf`; nothing else is required.
 
    `build_inline.py` **needs `…_interleaved.pdf`** from step 1 — don't delete it
    until the inline build finishes.
+
+3. **`add_clubbed.py`** — runs on the finished inline PDF. For each of the ~6,980
+   one-pada/line verses it *draws* a **clubbed** page (two padas side by side)
+   and qpdf-splices it right after the sloka, before the enlarged page, so the
+   order becomes `sloka → clubbed → large`. It rebuilds the outline with a
+   `» clubbed` + `»» read large` child per clubbed verse and removes the stale
+   sidecar. Idempotent: it refuses to run if the outline already has clubbed
+   entries. See the main README's *pada packing* section for the split.
 
 ### `add_outline.py` (standalone)
 

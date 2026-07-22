@@ -26,8 +26,10 @@ ATTRIB_RE = re.compile(r"uv[aä]ca\b", re.IGNORECASE)
 DEVA_SCALE = 1.5     # enlarge Devanagari glyphs (native ~13pt -> ~19pt)
 TL_SCALE = 1.0       # leave transliteration at its native ~17pt
 SIDE_MARGIN = 24     # keep enlarged lines off the page edges
+CLUB_MARGIN = 12     # tighter side margin for clubbed (2-padas/line) pages
 VERSE_GAP = 6        # vertical gap between interleaved rows
 BELOW_GAP = 14       # gap before the word-for-word / translation block
+DEVA_GAP = 16        # horizontal gap between two clubbed Devanagari padas
 
 SEP = " // "         # separator between side-by-side transliteration padas
 SEP_FONT = "times-italic"
@@ -238,9 +240,10 @@ def is_transformable(src, pno):
 def _render_row(new, src, pno, row, y, max_w):
     clips = [seg for seg in row if seg[0] == "clip"]
     n_sep = sum(1 for seg in row if seg[0] == "sep")
+    n_gap = sum(1 for seg in row if seg[0] == "gap")
     base_sz = 17 * TL_SCALE
     sep_w = fitz.get_text_length(SEP, fontname=SEP_FONT, fontsize=base_sz)
-    nat_w = sum(bb.width * sc for _, bb, sc in clips) + sep_w * n_sep
+    nat_w = sum(bb.width * sc for _, bb, sc in clips) + sep_w * n_sep + DEVA_GAP * n_gap
     fit = min(1.0, max_w / nat_w) if nat_w > max_w else 1.0
     row_h = max(bb.height * sc for _, bb, sc in clips) * fit
 
@@ -250,6 +253,8 @@ def _render_row(new, src, pno, row, y, max_w):
             new.insert_text((x, y + row_h * 0.72), SEP, fontname=SEP_FONT,
                             fontsize=base_sz * fit, color=SEP_COLOR)
             x += sep_w * fit
+        elif seg[0] == "gap":                       # blank space between clubbed padas
+            x += DEVA_GAP * fit
         else:
             _, bb, sc = seg
             w, h = bb.width * sc * fit, bb.height * sc * fit
@@ -258,7 +263,7 @@ def _render_row(new, src, pno, row, y, max_w):
     return row_h
 
 
-def _compose(new, src, pno, rows, deva, tl):
+def _compose(new, src, pno, rows, deva, tl, side_margin=SIDE_MARGIN):
     """Stamp header + given rows + the word-for-word/translation block onto page
     `new`, copying vector content from src[pno]. `deva`/`tl` set the verse bounds."""
     page = src[pno]
@@ -273,7 +278,7 @@ def _compose(new, src, pno, rows, deva, tl):
     new.show_pdf_page(fitz.Rect(0, 0, W, verse_top), src, pno,
                       clip=fitz.Rect(0, 0, W, verse_top))            # header
 
-    max_w = W - 2 * SIDE_MARGIN
+    max_w = W - 2 * side_margin
     y = verse_top
     for row in rows:
         y += _render_row(new, src, pno, row, y, max_w) + VERSE_GAP
@@ -313,3 +318,72 @@ def draw_enlarged_sloka(new, src, pno):
     rows = [[("clip", d, DEVA_SCALE)] for d in deva] \
         + [[("clip", t, TL_SCALE)] for t in tl]
     return _compose(new, src, pno, rows, deva, tl)
+
+
+# --------------------------------------------------------------------------
+# Clubbed layout — two padas per line (the traditional couplet layout)
+# --------------------------------------------------------------------------
+# The interleaved page draws one pada per line, enlarging the Devanagari 1.5x.
+# When the source prints one pada per Devanagari line (canto 10-12 mostly), the
+# verse can instead be *clubbed* into couplets: two padas side by side per line,
+# like the older cantos that pack 2/line. This is more compact but shrinks the
+# Devanagari (two padas rarely fit the page at 1.5x, so the row auto-fits down).
+# Clubbable verses get this as their primary enhanced page, keeping the enlarged
+# 1-pada/line page as a second "read large" page right after it.
+
+
+def _clubbable_body(deva, tl, attrib):
+    """True when the verse body is a clean 1:1 pairing (one pada per Devanagari
+    line) with at least one couplet's worth of padas to club."""
+    if not deva or not tl:
+        return False
+    attrib = min(attrib, len(deva) - 1, len(tl) - 1)
+    db, tb = deva[attrib:], tl[attrib:]
+    return len(db) == len(tb) and len(db) >= 2
+
+
+def is_clubbable(src, pno):
+    """A transformable verse whose Devanagari is one-pada-per-line — the only
+    kind the clubbed couplet layout applies to."""
+    deva, tl, tl_texts, _ = classify_lines(src[pno])
+    attrib = leading_attributions(tl_texts)
+    if verse_rows(deva, tl, attrib) is None:
+        return False
+    return _clubbable_body(deva, tl, attrib)
+
+
+def _clubbed_rows(deva, tl, attrib):
+    """Rows with two padas per line. Leading attribution lines stay paired 1:1;
+    the body pairs consecutive padas side by side (a lone trailing pada stays on
+    its own line)."""
+    attrib = min(attrib, len(deva) - 1, len(tl) - 1)
+    rows = []
+    for i in range(attrib):                              # attribution: 1:1 stacked
+        rows.append([("clip", tl[i], TL_SCALE)])
+        rows.append([("clip", deva[i], DEVA_SCALE)])
+    db, tb = deva[attrib:], tl[attrib:]
+    i, n = 0, len(db)
+    while i < n:
+        if i + 1 < n:                                    # a couplet, side by side
+            rows.append([("clip", tb[i], TL_SCALE), ("sep",), ("clip", tb[i + 1], TL_SCALE)])
+            rows.append([("clip", db[i], DEVA_SCALE), ("gap",), ("clip", db[i + 1], DEVA_SCALE)])
+            i += 2
+        else:                                            # lone trailing pada
+            rows.append([("clip", tb[i], TL_SCALE)])
+            rows.append([("clip", db[i], DEVA_SCALE)])
+            i += 1
+    return rows
+
+
+def draw_clubbed(new, src, pno):
+    """Clubbed page: two padas per line. Returns False if the verse isn't a clean
+    one-pada-per-line verse (nothing to club)."""
+    page = src[pno]
+    deva, tl, tl_texts, is_rm = classify_lines(page)
+    attrib = leading_attributions(tl_texts)
+    if verse_rows(deva, tl, attrib) is None or not _clubbable_body(deva, tl, attrib):
+        return False
+    if is_rm:
+        deva = expand_deva(page, deva)
+    rows = _clubbed_rows(deva, tl, attrib)
+    return _compose(new, src, pno, rows, deva, tl, side_margin=CLUB_MARGIN)

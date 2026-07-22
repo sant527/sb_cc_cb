@@ -183,7 +183,8 @@ class Translation:
     label: str         # "SB 1.1.1 / 23"
     chapter: str       # "SB 1.1: Questions by the Sages"
     sloka: int         # the verse itself
-    interleaved: int = -1   # the added interleaved page, or -1 if none
+    interleaved: int = -1   # the primary enhanced page (clubbed if any), or -1
+    large: int = -1         # the enlarged 1-pada/line page after a clubbed one, or -1
 
     @staticmethod
     def sloka_page(label: str, page: int) -> int:
@@ -255,8 +256,13 @@ class Index:
                 last = Translation(page, label, chapter,
                                    Translation.sloka_page(label, page))
                 entries.append(last)
-            elif level == 5 and last is not None and title.lstrip().startswith("»"):
-                last.interleaved = page          # the verse's enhanced page
+            elif level == 5 and last is not None:
+                t = title.lstrip()
+                if t.startswith("»»"):           # "»» read large": the enlarged page
+                    last.large = page
+                elif t.startswith("»"):          # the primary enhanced page (clubbed,
+                    if last.interleaved < 0:      # interleaved, or enlarged-sloka)
+                        last.interleaved = page
         entries.sort(key=lambda e: e.page)
         return cls(entries)
 
@@ -274,7 +280,7 @@ class Index:
 
         cache = pdf.with_suffix(".index.json")
         stat = pdf.stat()
-        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 6}
+        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 7}
 
         if cache.exists():
             try:
@@ -287,7 +293,7 @@ class Index:
         idx = cls.build(doc)
         cache.write_text(json.dumps({
             "stamp": stamp,
-            "entries": [[e.page, e.label, e.chapter, e.sloka, e.interleaved]
+            "entries": [[e.page, e.label, e.chapter, e.sloka, e.interleaved, e.large]
                         for e in idx.entries],
         }))
         return idx
