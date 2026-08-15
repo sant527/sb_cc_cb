@@ -30,6 +30,8 @@ CLUB_MARGIN = 12     # tighter side margin for clubbed (2-padas/line) pages
 VERSE_GAP = 6        # vertical gap between interleaved rows
 BELOW_GAP = 14       # gap before the word-for-word / translation block
 DEVA_GAP = 16        # horizontal gap between two clubbed Devanagari padas
+STRETCH_MARGIN = 14  # side margin for the full-width stretched reading page
+STRETCH_GAP = 22     # gap between padas on a 2-per-row stretched page
 
 SEP = " // "         # separator between side-by-side transliteration padas
 SEP_FONT = "times-italic"
@@ -387,3 +389,91 @@ def draw_clubbed(new, src, pno):
         deva = expand_deva(page, deva)
     rows = _clubbed_rows(deva, tl, attrib)
     return _compose(new, src, pno, rows, deva, tl, side_margin=CLUB_MARGIN)
+
+
+# --------------------------------------------------------------------------
+# Stretched reading page — Devanagari scaled to fill the page width
+# --------------------------------------------------------------------------
+# A big, clean reading page: every Devanagari line is scaled by one uniform
+# factor so the widest line runs edge to edge, and the trailing dandas / verse
+# number ("… ॥ 24 ॥") are dropped so they don't cap the width. `per_row` lays the
+# lines out one pada per row (per_row=1, biggest) or two per row (per_row=2, the
+# couplet look). No clubbing / pairing analysis — it just groups the lines.
+
+
+def _strip_danda(page, line):
+    """Clip a Devanagari line to drop a trailing danda run — a single ')' (।) or
+    the ')) N ))' of a verse number (॥ N ॥) in this legacy encoding. '(' is a
+    virama (real content) and is kept."""
+    chars = []
+    for b in page.get_text("rawdict")["blocks"]:
+        for ln in b.get("lines", []):
+            for sp in ln.get("spans", []):
+                for ch in sp.get("chars", []):
+                    x0, y0, x1, y1 = ch["bbox"]
+                    if y0 >= line.y0 - 2 and y1 <= line.y1 + 2:
+                        chars.append((x0, x1, ch["c"]))
+    chars.sort()
+    i = len(chars) - 1
+    while i >= 0 and (chars[i][2].strip() == "" or chars[i][2] == ")" or chars[i][2].isdigit()):
+        i -= 1
+    return line if i < 0 else fitz.Rect(line.x0, line.y0, chars[i][1], line.y1)
+
+
+def draw_stretched(new, src, pno, per_row=1):
+    """Full-width stretched reading page. `per_row` Devanagari lines per row
+    (1 = one pada/row, 2 = couplets). Returns False if there's no Devanagari."""
+    page = src[pno]
+    deva, tl, tt, is_rm = classify_lines(page)
+    if not deva:
+        return False
+    W, H = page.rect.width, page.rect.height
+    attrib = leading_attributions(tt)
+
+    xclips = [_strip_danda(page, b) for b in deva]           # trim trailing dandas (x)
+    ys = expand_deva(page, deva) if is_rm else deva          # recover descenders (y)
+    clips = [fitz.Rect(xclips[i].x0, ys[i].y0, xclips[i].x1, ys[i].y1)
+             for i in range(len(deva))]
+
+    # rows: each attribution line on its own, then the body `per_row` at a time
+    groups = [[clips[i]] for i in range(attrib)]
+    body = clips[attrib:]
+    for i in range(0, len(body), per_row):
+        groups.append(body[i:i + per_row])
+
+    def gw(g):
+        return sum(c.width for c in g) + STRETCH_GAP * (len(g) - 1)
+
+    max_w = W - 2 * STRETCH_MARGIN
+    sc = max_w / max(gw(g) for g in groups)                  # one factor, widest row fills
+
+    verse_top = min(r.y0 for r in deva + tl)
+    verse_bot = max(r.y1 for r in deva + tl)
+    below = [sp["bbox"] for b in page.get_text("dict")["blocks"]
+             for ln in b.get("lines", []) for sp in ln["spans"]
+             if sp["text"].strip() and sp["bbox"][1] > verse_bot + 1 and sp["bbox"][3] < H - 30]
+
+    new.show_pdf_page(fitz.Rect(0, 0, W, verse_top), src, pno,
+                      clip=fitz.Rect(0, 0, W, verse_top))     # header
+    y = verse_top
+    for g in groups:
+        h = max(c.height for c in g) * sc
+        x = (W - gw(g) * sc) / 2
+        for j, c in enumerate(g):
+            if j:
+                x += STRETCH_GAP * sc
+            w = c.width * sc
+            new.show_pdf_page(fitz.Rect(x, y, x + w, y + c.height * sc), src, pno, clip=c)
+            x += w
+        y += h + VERSE_GAP
+    y += BELOW_GAP
+    for t in tl:                                             # transliteration, natural size
+        w, h = t.width * TL_SCALE, t.height * TL_SCALE
+        new.show_pdf_page(fitz.Rect((W - w) / 2, y, (W - w) / 2 + w, y + h), src, pno, clip=t)
+        y += h + 2
+    if below:
+        top = min(r[1] for r in below) - 2
+        bot = max(r[3] for r in below) + 2
+        y += BELOW_GAP
+        new.show_pdf_page(fitz.Rect(0, y, W, y + (bot - top)), src, pno, clip=fitz.Rect(0, top, W, bot))
+    return True

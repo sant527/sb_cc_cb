@@ -200,7 +200,22 @@ Press `→` on the clubbed page to reach the large one. In the outline these are
 `» clubbed` and a `»» read large` child under the verse; verses that aren't
 clubbed keep their single `» interleaved` / `» enlarged sloka` child.
 
-### Building it — three steps
+**Stretched reading pages.** Every SB verse also gets two **stretched** pages
+(`interleave.draw_stretched`, added by
+[add_stretched.py](pre_processing/add_stretched.py)): the Devanagari scaled by a
+single factor so the widest line runs edge to edge, with trailing dandas and the
+verse number stripped so they don't cap the width. One lays out **one pada per
+row** (biggest), the other **two padas per row** (couplet). They sit after the
+verse's other enhanced pages:
+
+```
+sloka → [clubbed] → large → stretched (1 pada/row) → stretched (2 padas/row)
+```
+
+In the outline they're two `▸ stretched` children; page forward with `→` to
+reach them.
+
+### Building it — four steps
 
 The reader (`reader.py`) is standalone; the build scripts live in
 [`pre_processing/`](pre_processing/) and are only needed to (re)generate the PDF.
@@ -210,6 +225,7 @@ The reader (`reader.py`) is standalone; the build scripts live in
 uv run python pre_processing/build_interleaved.py   # 1) draw the interleaved pages (~35 min)
 uv run python pre_processing/build_inline.py        # 2) splice inline + add outline (~2 min, needs qpdf)
 uv run python pre_processing/add_clubbed.py         # 3) add clubbed pages (~10 min, needs qpdf)
+uv run python pre_processing/add_stretched.py       # 4) add stretched reading pages (~25 min, needs qpdf)
 ```
 
 1. **`build_interleaved.py`** appends one interleaved page per verse at the *tail*

@@ -29,17 +29,18 @@ file lives there — the scripts just live in `pre_processing/`.
 
 3. Python deps are in `pyproject.toml` — `uv run` installs them automatically.
 
-## Regenerate (three steps, from the project root)
+## Regenerate (four steps, from the project root)
 
 ```sh
-uv run python pre_processing/build_interleaved.py   # 1) draw the pages    (~35 min)
-uv run python pre_processing/build_inline.py        # 2) splice + outline  (~3 min)
-uv run python pre_processing/add_clubbed.py         # 3) add clubbed pages (~10 min)
+uv run python pre_processing/build_interleaved.py   # 1) draw the pages     (~35 min)
+uv run python pre_processing/build_inline.py        # 2) splice + outline   (~3 min)
+uv run python pre_processing/add_clubbed.py         # 3) add clubbed pages  (~10 min)
+uv run python pre_processing/add_stretched.py       # 4) add stretched pages(~25 min)
 ```
 
-That's it — the result is `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf`
-(≈762 MB, 257,282 pages), self-contained: pages in reading order **and** a
-working outline. Ship just that `.pdf`; nothing else is required.
+That's it — the result is `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf`,
+self-contained: pages in reading order **and** a working outline. Ship just that
+`.pdf`; nothing else is required.
 
 ### What each step does
 
@@ -67,6 +68,16 @@ working outline. Ship just that `.pdf`; nothing else is required.
    `» clubbed` + `»» read large` child per clubbed verse and removes the stale
    sidecar. Idempotent: it refuses to run if the outline already has clubbed
    entries. See the main README's *pada packing* section for the split.
+
+4. **`add_stretched.py`** — runs on the inline PDF. For every SB verse with
+   Devanagari it *draws* two **stretched** reading pages (`interleave.draw_stretched`)
+   — one pada per row and two padas per row — with the Devanagari scaled by a
+   single factor to fill the page width and trailing dandas / verse numbers
+   stripped. qpdf splices both in after the verse's existing enhanced page(s):
+   `sloka → [clubbed] → large → stretched(1/row) → stretched(2/row)`. The outline
+   gets two `▸ stretched` children per verse (the reader ignores them and reaches
+   the pages by paging forward). Idempotent. `STRETCH_VERIFY=1` writes to a temp
+   file for inspection instead of replacing the PDF.
 
 ### `add_outline.py` (standalone)
 
