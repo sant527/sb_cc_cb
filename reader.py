@@ -76,7 +76,8 @@ def group_key(label: str) -> str | None:
 ZOOM_MIN, ZOOM_MAX = 0.4, 6.0
 CURSOR_HIDE_MS = 2500      # hide the mouse after this idle time in fullscreen
 
-MODE_NAMES = ("Translation", "Sloka", "Interleaved")   # nav modes cycled by `s`
+MODE_NAMES = ("Translation", "Sloka", "Interleaved",   # nav modes cycled by `s`
+              "Stretch 1/row", "Stretch 2/row")
 
 
 # --------------------------------------------------------------------------
@@ -185,6 +186,8 @@ class Translation:
     sloka: int         # the verse itself
     interleaved: int = -1   # the primary enhanced page (clubbed if any), or -1
     large: int = -1         # the enlarged 1-pada/line page after a clubbed one, or -1
+    stretch1: int = -1      # full-width stretched page, one pada per row, or -1
+    stretch2: int = -1      # full-width stretched page, two padas per row, or -1
 
     @staticmethod
     def sloka_page(label: str, page: int) -> int:
@@ -258,7 +261,12 @@ class Index:
                 entries.append(last)
             elif level == 5 and last is not None:
                 t = title.lstrip()
-                if t.startswith("»»"):           # "»» read large": the enlarged page
+                if t.startswith("▸"):            # "▸ stretched (…)": full-width pages
+                    if "2/row" in t:
+                        last.stretch2 = page
+                    else:
+                        last.stretch1 = page
+                elif t.startswith("»»"):         # "»» read large": the enlarged page
                     last.large = page
                 elif t.startswith("»"):          # the primary enhanced page (clubbed,
                     if last.interleaved < 0:      # interleaved, or enlarged-sloka)
@@ -280,7 +288,7 @@ class Index:
 
         cache = pdf.with_suffix(".index.json")
         stat = pdf.stat()
-        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 7}
+        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 8}
 
         if cache.exists():
             try:
@@ -293,8 +301,8 @@ class Index:
         idx = cls.build(doc)
         cache.write_text(json.dumps({
             "stamp": stamp,
-            "entries": [[e.page, e.label, e.chapter, e.sloka, e.interleaved, e.large]
-                        for e in idx.entries],
+            "entries": [[e.page, e.label, e.chapter, e.sloka, e.interleaved,
+                         e.large, e.stretch1, e.stretch2] for e in idx.entries],
         }))
         return idx
 
@@ -315,9 +323,14 @@ class Index:
         return i - 1 if i > 0 else None
 
     def mode_page(self, i: int, mode: int) -> int:
-        """Page for verse i in a given mode (0=translation, 1=sloka, 2=interleaved),
-        falling back when that mode isn't available for the verse."""
+        """Page for verse i in a given mode (0=translation, 1=sloka, 2=interleaved,
+        3=stretch 1/row, 4=stretch 2/row), falling back when that mode isn't
+        available for the verse."""
         e = self.entries[i]
+        if mode == 4 and e.stretch2 > 0:
+            return e.stretch2
+        if mode == 3 and e.stretch1 > 0:
+            return e.stretch1
         if mode == 2 and e.interleaved > 0:
             return e.interleaved
         if mode >= 1:
@@ -325,13 +338,17 @@ class Index:
         return e.page
 
     def modes_for(self, i: int) -> list[int]:
-        """Which of translation/sloka/interleaved are meaningfully distinct here."""
+        """Which nav modes are meaningfully distinct for this verse."""
         e = self.entries[i]
         m = [0]
         if e.sloka != e.page:
             m.append(1)
         if e.interleaved > 0:
             m.append(2)
+        if e.stretch1 > 0:
+            m.append(3)
+        if e.stretch2 > 0:
+            m.append(4)
         return m
 
     @staticmethod
@@ -1022,10 +1039,10 @@ class Reader(QMainWindow):
         if i is None:
             return
         avail = self.index.modes_for(i)
-        order = (0, 1, 2)
-        start = order.index(self.nav_mode)
-        for step in range(1, 4):
-            cand = order[(start + step) % 3]
+        n = len(MODE_NAMES)
+        start = self.nav_mode % n
+        for step in range(1, n + 1):
+            cand = (start + step) % n
             if cand in avail:
                 self.nav_mode = cand
                 break

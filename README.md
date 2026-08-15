@@ -120,7 +120,7 @@ Forward is **down / right**.
 | `Shift`+`Ctrl`+`↑`/`↓` | scroll more (3×) |
 | `Enter` | **random** verse (from the chosen scope, in the current nav mode) |
 | `r` | choose which cantos/sections `Enter` draws from |
-| `s` | cycle nav mode: translation → sloka → interleaved |
+| `s` | cycle nav mode: translation → sloka → interleaved → stretch 1/row → stretch 2/row |
 | `Space` / `PgDn` | one page forward |
 | `PgUp` | one page back |
 | `t` | theme picker |
@@ -152,7 +152,7 @@ fit-width stays put. `+`/`−` resumes from whatever is currently on screen rath
 than snapping to some other scale, and drops you into free-zoom. The mode is
 remembered between runs.
 
-## Nav mode: translation / sloka / interleaved
+## Nav mode: translation / sloka / interleaved / stretched
 
 `s` cycles what up/down (and `Enter`) land on for the current verse:
 
@@ -162,6 +162,8 @@ remembered between runs.
    enlarged Devanagari (SB only; see below). For one-pada/line verses this is the
    compact **clubbed** page (two padas per line); press `→` for the enlarged
    1-pada/line version right after it.
+4. **Stretch 1/row** — the full-width stretched reading page, one pada per row (SB)
+5. **Stretch 2/row** — the same, two padas per row (SB)
 
 The status bar shows `SLOKA` / `INTERLEAVED` when you're on one, and the mode is
 remembered between runs. `s` skips modes a verse doesn't have: CC/CB print verse
