@@ -74,6 +74,7 @@ def group_key(label: str) -> str | None:
     return None
 
 ZOOM_MIN, ZOOM_MAX = 0.4, 6.0
+ZOOM_STEP = 1.05                # +/- zoom factor per press (~1/3 of the old 1.15)
 CURSOR_HIDE_MS = 2500      # hide the mouse after this idle time in fullscreen
 
 MODE_NAMES = ("Translation", "Sloka", "Interleaved",   # nav modes cycled by `s`
@@ -1255,11 +1256,11 @@ class Reader(QMainWindow):
                 self.palette_.move(self.geometry().center() - self.palette_.rect().center())
                 self.palette_.open()
             case Qt.Key.Key_Plus | Qt.Key.Key_Equal:
-                self.view.zoom_by(1.15)
+                self.view.zoom_by(ZOOM_STEP)
                 self._flash(f"Zoom {self.view.zoom:.0%}")
                 self._save_soon.start(600)
             case Qt.Key.Key_Minus:
-                self.view.zoom_by(1 / 1.15)
+                self.view.zoom_by(1 / ZOOM_STEP)
                 self._flash(f"Zoom {self.view.zoom:.0%}")
                 self._save_soon.start(600)
             case Qt.Key.Key_W | Qt.Key.Key_0:
