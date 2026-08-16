@@ -32,10 +32,11 @@ file lives there — the scripts just live in `pre_processing/`.
 ## Regenerate (four steps, from the project root)
 
 ```sh
-uv run python pre_processing/build_interleaved.py   # 1) draw the pages     (~35 min)
-uv run python pre_processing/build_inline.py        # 2) splice + outline   (~3 min)
-uv run python pre_processing/add_clubbed.py         # 3) add clubbed pages  (~10 min)
-uv run python pre_processing/add_stretched.py       # 4) add stretched pages(~25 min)
+uv run python pre_processing/build_interleaved.py   # 1) draw the pages       (~35 min)
+uv run python pre_processing/build_inline.py        # 2) splice + outline     (~3 min)
+uv run python pre_processing/add_clubbed.py         # 3) add clubbed pages    (~10 min)
+uv run python pre_processing/add_stretched.py       # 4) add stretched pages  (~25 min)
+uv run python pre_processing/add_stretched_notl.py  # 5) add no-roman pages   (~25 min)
 ```
 
 That's it — the result is `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf`,
@@ -75,9 +76,16 @@ self-contained: pages in reading order **and** a working outline. Ship just that
    single factor to fill the page width and trailing dandas / verse numbers
    stripped. qpdf splices both in after the verse's existing enhanced page(s):
    `sloka → [clubbed] → large → stretched(1/row) → stretched(2/row)`. The outline
-   gets two `▸ stretched` children per verse (the reader ignores them and reaches
-   the pages by paging forward). Idempotent. `STRETCH_VERIFY=1` writes to a temp
-   file for inspection instead of replacing the PDF.
+   gets two `▸ stretched` children per verse (the reader exposes them as the
+   *Stretch 1/row* and *Stretch 2/row* nav modes). Idempotent. `STRETCH_VERIFY=1`
+   writes to a temp file for inspection instead of replacing the PDF.
+
+5. **`add_stretched_notl.py`** — same stretched pages but with the roman sloka
+   dropped (`draw_stretched(…, translit=False)`): just the full-width Devanagari,
+   word-for-word, and translation. Two per verse (1/row, 2/row), spliced after the
+   verse's `▸ stretched (2/row)` page, adding two `▸ stretched no-roman` children
+   (reader modes *Stretch 1/row (no roman)* and *Stretch 2/row (no roman)*). Run
+   after step 4. Idempotent; `STRETCH_VERIFY=1` supported.
 
 ### `add_outline.py` (standalone)
 

@@ -420,9 +420,10 @@ def _strip_danda(page, line):
     return line if i < 0 else fitz.Rect(line.x0, line.y0, chars[i][1], line.y1)
 
 
-def draw_stretched(new, src, pno, per_row=1):
+def draw_stretched(new, src, pno, per_row=1, translit=True):
     """Full-width stretched reading page. `per_row` Devanagari lines per row
-    (1 = one pada/row, 2 = couplets). Returns False if there's no Devanagari."""
+    (1 = one pada/row, 2 = couplets). `translit=False` drops the roman sloka,
+    leaving Devanagari + word-for-word + translation. False if no Devanagari."""
     page = src[pno]
     deva, tl, tt, is_rm = classify_lines(page)
     if not deva:
@@ -466,11 +467,12 @@ def draw_stretched(new, src, pno, per_row=1):
             new.show_pdf_page(fitz.Rect(x, y, x + w, y + c.height * sc), src, pno, clip=c)
             x += w
         y += h + VERSE_GAP
-    y += BELOW_GAP
-    for t in tl:                                             # transliteration, natural size
-        w, h = t.width * TL_SCALE, t.height * TL_SCALE
-        new.show_pdf_page(fitz.Rect((W - w) / 2, y, (W - w) / 2 + w, y + h), src, pno, clip=t)
-        y += h + 2
+    if translit:                                            # roman sloka (skipped for no-roman)
+        y += BELOW_GAP
+        for t in tl:
+            w, h = t.width * TL_SCALE, t.height * TL_SCALE
+            new.show_pdf_page(fitz.Rect((W - w) / 2, y, (W - w) / 2 + w, y + h), src, pno, clip=t)
+            y += h + 2
     if below:
         top = min(r[1] for r in below) - 2
         bot = max(r[3] for r in below) + 2

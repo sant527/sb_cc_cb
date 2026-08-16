@@ -120,7 +120,7 @@ Forward is **down / right**.
 | `Shift`+`Ctrl`+`↑`/`↓` | scroll more (3×) |
 | `Enter` | **random** verse (from the chosen scope, in the current nav mode) |
 | `r` | choose which cantos/sections `Enter` draws from |
-| `s` | cycle nav mode: translation → sloka → interleaved → stretch 1/row → stretch 2/row |
+| `s` | cycle nav mode: translation → sloka → interleaved → stretch 1/row → stretch 2/row → stretch 1/row (no roman) → stretch 2/row (no roman) |
 | `Space` / `PgDn` | one page forward |
 | `PgUp` | one page back |
 | `t` | theme picker |
@@ -164,6 +164,9 @@ remembered between runs.
    1-pada/line version right after it.
 4. **Stretch 1/row** — the full-width stretched reading page, one pada per row (SB)
 5. **Stretch 2/row** — the same, two padas per row (SB)
+6. **Stretch 1/row (no roman)** — Stretch 1/row with the roman sloka dropped —
+   just Devanagari, word-for-word and translation (SB)
+7. **Stretch 2/row (no roman)** — the same, two padas per row (SB)
 
 The status bar shows `SLOKA` / `INTERLEAVED` when you're on one, and the mode is
 remembered between runs. `s` skips modes a verse doesn't have: CC/CB print verse
@@ -202,20 +205,24 @@ Press `→` on the clubbed page to reach the large one. In the outline these are
 `» clubbed` and a `»» read large` child under the verse; verses that aren't
 clubbed keep their single `» interleaved` / `» enlarged sloka` child.
 
-**Stretched reading pages.** Every SB verse also gets two **stretched** pages
+**Stretched reading pages.** Every SB verse also gets four **stretched** pages
 (`interleave.draw_stretched`, added by
-[add_stretched.py](pre_processing/add_stretched.py)): the Devanagari scaled by a
-single factor so the widest line runs edge to edge, with trailing dandas and the
-verse number stripped so they don't cap the width. One lays out **one pada per
-row** (biggest), the other **two padas per row** (couplet). They sit after the
-verse's other enhanced pages:
+[add_stretched.py](pre_processing/add_stretched.py) and
+[add_stretched_notl.py](pre_processing/add_stretched_notl.py)): the Devanagari
+scaled by a single factor so the widest line runs edge to edge, with trailing
+dandas and the verse number stripped so they don't cap the width. Two lay it out
+**one pada per row** (biggest) and **two padas per row** (couplet); the other two
+repeat those but **drop the roman sloka** — just Devanagari, word-for-word and
+translation. They sit after the verse's other enhanced pages:
 
 ```
-sloka → [clubbed] → large → stretched (1 pada/row) → stretched (2 padas/row)
+sloka → [clubbed] → large
+      → stretched (1/row) → stretched (2/row)
+      → stretched (1/row, no roman) → stretched (2/row, no roman)
 ```
 
-In the outline they're two `▸ stretched` children; page forward with `→` to
-reach them.
+In the outline they're `▸ stretched` and `▸ stretched no-roman` children; the
+reader reaches them as nav modes (press `s`).
 
 ### Building it — four steps
 

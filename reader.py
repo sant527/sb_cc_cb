@@ -77,7 +77,8 @@ ZOOM_MIN, ZOOM_MAX = 0.4, 6.0
 CURSOR_HIDE_MS = 2500      # hide the mouse after this idle time in fullscreen
 
 MODE_NAMES = ("Translation", "Sloka", "Interleaved",   # nav modes cycled by `s`
-              "Stretch 1/row", "Stretch 2/row")
+              "Stretch 1/row", "Stretch 2/row",
+              "Stretch 1/row (no roman)", "Stretch 2/row (no roman)")
 
 
 # --------------------------------------------------------------------------
@@ -188,6 +189,8 @@ class Translation:
     large: int = -1         # the enlarged 1-pada/line page after a clubbed one, or -1
     stretch1: int = -1      # full-width stretched page, one pada per row, or -1
     stretch2: int = -1      # full-width stretched page, two padas per row, or -1
+    stretch3: int = -1      # stretched 1/row without the roman sloka, or -1
+    stretch4: int = -1      # stretched 2/row without the roman sloka, or -1
 
     @staticmethod
     def sloka_page(label: str, page: int) -> int:
@@ -262,10 +265,11 @@ class Index:
             elif level == 5 and last is not None:
                 t = title.lstrip()
                 if t.startswith("▸"):            # "▸ stretched (…)": full-width pages
-                    if "2/row" in t:
-                        last.stretch2 = page
+                    two = "2/row" in t
+                    if "no-roman" in t:
+                        setattr(last, "stretch4" if two else "stretch3", page)
                     else:
-                        last.stretch1 = page
+                        setattr(last, "stretch2" if two else "stretch1", page)
                 elif t.startswith("»»"):         # "»» read large": the enlarged page
                     last.large = page
                 elif t.startswith("»"):          # the primary enhanced page (clubbed,
@@ -288,7 +292,7 @@ class Index:
 
         cache = pdf.with_suffix(".index.json")
         stat = pdf.stat()
-        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 8}
+        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 9}
 
         if cache.exists():
             try:
@@ -301,8 +305,9 @@ class Index:
         idx = cls.build(doc)
         cache.write_text(json.dumps({
             "stamp": stamp,
-            "entries": [[e.page, e.label, e.chapter, e.sloka, e.interleaved,
-                         e.large, e.stretch1, e.stretch2] for e in idx.entries],
+            "entries": [[e.page, e.label, e.chapter, e.sloka, e.interleaved, e.large,
+                         e.stretch1, e.stretch2, e.stretch3, e.stretch4]
+                        for e in idx.entries],
         }))
         return idx
 
@@ -327,6 +332,10 @@ class Index:
         3=stretch 1/row, 4=stretch 2/row), falling back when that mode isn't
         available for the verse."""
         e = self.entries[i]
+        if mode == 6 and e.stretch4 > 0:
+            return e.stretch4
+        if mode == 5 and e.stretch3 > 0:
+            return e.stretch3
         if mode == 4 and e.stretch2 > 0:
             return e.stretch2
         if mode == 3 and e.stretch1 > 0:
@@ -349,6 +358,10 @@ class Index:
             m.append(3)
         if e.stretch2 > 0:
             m.append(4)
+        if e.stretch3 > 0:
+            m.append(5)
+        if e.stretch4 > 0:
+            m.append(6)
         return m
 
     @staticmethod
