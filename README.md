@@ -120,7 +120,7 @@ Forward is **down / right**.
 | `Shift`+`Ctrl`+`↑`/`↓` | scroll more (3×) |
 | `Enter` | **random** verse (from the chosen scope, in the current nav mode) |
 | `r` | choose which cantos/sections `Enter` draws from |
-| `s` | cycle nav mode: translation → sloka → interleaved → stretch 1/row → stretch 2/row → stretch 1/row (no roman) → stretch 2/row (no roman) |
+| `s` | cycle nav mode: translation → sloka → interleaved → stretch 1/row → stretch 2/row → stretch 1/row (no roman) → stretch 2/row (no roman) → glossed |
 | `Space` / `PgDn` | one page forward |
 | `PgUp` | one page back |
 | `t` | theme picker |
@@ -167,6 +167,9 @@ remembered between runs.
 6. **Stretch 1/row (no roman)** — Stretch 1/row with the roman sloka dropped —
    just Devanagari, word-for-word and translation (SB)
 7. **Stretch 2/row (no roman)** — the same, two padas per row (SB)
+8. **Glossed** — the stretched Devanagari with each printed word-for-word gloss
+   placed **above its word** (transliteration grey, meaning + underline alternating
+   purple/teal), and only the translation below (SB)
 
 The status bar shows `SLOKA` / `INTERLEAVED` when you're on one, and the mode is
 remembered between runs. `s` skips modes a verse doesn't have: CC/CB print verse
@@ -219,15 +222,32 @@ translation. They sit after the verse's other enhanced pages:
 sloka → [clubbed] → large
       → stretched (1/row) → stretched (2/row)
       → stretched (1/row, no roman) → stretched (2/row, no roman)
+      → glossed
 ```
 
 In the outline they're `▸ stretched` and `▸ stretched no-roman` children; the
 reader reaches them as nav modes (press `s`).
 
-### Building it — four steps
+**Glossed page.** Each SB verse also gets a **glossed** reading page
+(`interleave.draw_glossed`, added by [add_glossed.py](pre_processing/add_glossed.py)):
+the stretched Devanagari with every printed word-for-word gloss placed **above its
+word** — transliteration in grey, meaning + a matching underline **alternating
+purple/teal** per word — and only the translation below (the word-for-word is
+already shown by the glosses). It uses only the meanings printed in the book,
+aligned to each word's approximate position (the Devanagari is sandhi-joined, so
+placement is close, not per-glyph exact). The ~6,985 one-pada/line verses get a
+real glossed page; the two-padas/line verses can't be word-aligned, so their
+*Glossed* slot repeats their stretched 1/row page (keeping the mode uniform). The
+purple/teal are saturated, so the reader renders these pages **preserving those
+pixels** while the Devanagari themes normally — the accents stay true in every
+theme.
+
+### Building it — six steps
 
 The reader (`reader.py`) is standalone; the build scripts live in
 [`pre_processing/`](pre_processing/) and are only needed to (re)generate the PDF.
+See [`pre_processing/README.md`](pre_processing/README.md) for the full sequence;
+in short:
 
 
 ```sh
@@ -235,6 +255,8 @@ uv run python pre_processing/build_interleaved.py   # 1) draw the interleaved pa
 uv run python pre_processing/build_inline.py        # 2) splice inline + add outline (~2 min, needs qpdf)
 uv run python pre_processing/add_clubbed.py         # 3) add clubbed pages (~10 min, needs qpdf)
 uv run python pre_processing/add_stretched.py       # 4) add stretched reading pages (~25 min, needs qpdf)
+uv run python pre_processing/add_stretched_notl.py  # 5) add no-roman stretched pages (~25 min, needs qpdf)
+uv run python pre_processing/add_glossed.py         # 6) add glossed pages (~90 min, needs qpdf)
 ```
 
 1. **`build_interleaved.py`** appends one interleaved page per verse at the *tail*

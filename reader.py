@@ -79,7 +79,8 @@ CURSOR_HIDE_MS = 2500      # hide the mouse after this idle time in fullscreen
 
 MODE_NAMES = ("Translation", "Sloka", "Interleaved",   # nav modes cycled by `s`
               "Stretch 1/row", "Stretch 2/row",
-              "Stretch 1/row (no roman)", "Stretch 2/row (no roman)")
+              "Stretch 1/row (no roman)", "Stretch 2/row (no roman)",
+              "Glossed")
 
 
 # --------------------------------------------------------------------------
@@ -192,6 +193,7 @@ class Translation:
     stretch2: int = -1      # full-width stretched page, two padas per row, or -1
     stretch3: int = -1      # stretched 1/row without the roman sloka, or -1
     stretch4: int = -1      # stretched 2/row without the roman sloka, or -1
+    glossed: int = -1       # glossed page (word-for-word above each Devanagari word), or -1
 
     @staticmethod
     def sloka_page(label: str, page: int) -> int:
@@ -219,6 +221,9 @@ class Index:
                            if e.interleaved > 0}
         self.sloka_to_i = {e.sloka: i for i, e in enumerate(entries)
                            if e.interleaved > 0}
+        # glossed pages carry saturated colour (purple/teal) -> rendered with the
+        # theme recolour preserving those pixels, so the accents stay true
+        self.glossed_pages = {e.glossed for e in entries if e.glossed > 0}
         # inline build: the enhanced page physically follows its sloka, so plain
         # paging just works. tail build: enhanced pages sit at the PDF tail.
         self.inline = bool(self.inter_to_i) and all(
@@ -265,12 +270,15 @@ class Index:
                 entries.append(last)
             elif level == 5 and last is not None:
                 t = title.lstrip()
-                if t.startswith("▸"):            # "▸ stretched (…)": full-width pages
-                    two = "2/row" in t
-                    if "no-roman" in t:
-                        setattr(last, "stretch4" if two else "stretch3", page)
+                if t.startswith("▸"):            # "▸ …": full-width stretched / glossed pages
+                    if "glossed" in t:
+                        last.glossed = page
                     else:
-                        setattr(last, "stretch2" if two else "stretch1", page)
+                        two = "2/row" in t
+                        if "no-roman" in t:
+                            setattr(last, "stretch4" if two else "stretch3", page)
+                        else:
+                            setattr(last, "stretch2" if two else "stretch1", page)
                 elif t.startswith("»»"):         # "»» read large": the enlarged page
                     last.large = page
                 elif t.startswith("»"):          # the primary enhanced page (clubbed,
@@ -293,7 +301,7 @@ class Index:
 
         cache = pdf.with_suffix(".index.json")
         stat = pdf.stat()
-        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 9}
+        stamp = {"size": stat.st_size, "mtime": int(stat.st_mtime), "v": 10}
 
         if cache.exists():
             try:
@@ -307,7 +315,7 @@ class Index:
         cache.write_text(json.dumps({
             "stamp": stamp,
             "entries": [[e.page, e.label, e.chapter, e.sloka, e.interleaved, e.large,
-                         e.stretch1, e.stretch2, e.stretch3, e.stretch4]
+                         e.stretch1, e.stretch2, e.stretch3, e.stretch4, e.glossed]
                         for e in idx.entries],
         }))
         return idx
@@ -333,6 +341,8 @@ class Index:
         3=stretch 1/row, 4=stretch 2/row), falling back when that mode isn't
         available for the verse."""
         e = self.entries[i]
+        if mode == 7 and e.glossed > 0:
+            return e.glossed
         if mode == 6 and e.stretch4 > 0:
             return e.stretch4
         if mode == 5 and e.stretch3 > 0:
@@ -363,6 +373,8 @@ class Index:
             m.append(5)
         if e.stretch4 > 0:
             m.append(6)
+        if e.glossed > 0:
+            m.append(7)
         return m
 
     @staticmethod
@@ -407,6 +419,7 @@ class PageView(QScrollArea):
     def __init__(self, doc: fitz.Document) -> None:
         super().__init__()
         self.doc = doc
+        self.glossed_pages: set[int] = set()   # rendered with colour preserved
         self.zoom = 1.0
         self.mode = "width"                    # "width" | "height" | "zoom"
         self._page = 1
@@ -433,13 +446,16 @@ class PageView(QScrollArea):
         self.label.setStyleSheet(f"background:{surround};")
         self.render(self._page)
 
-    def _recolour(self, pix: fitz.Pixmap) -> np.ndarray:
+    def _recolour(self, pix: fitz.Pixmap, preserve: bool = False) -> np.ndarray:
         # honour stride: MuPDF may pad rows
         rows = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.stride)
         src = rows[:, : pix.width * 3].reshape(pix.height, pix.width, 3)
         out = np.empty_like(src)
         for ch in range(3):
             np.take(self.lut[ch], src[:, :, ch], out=out[:, :, ch])
+        if preserve:   # keep strongly-saturated pixels (gloss accents) at their true colour
+            sat = src.max(2).astype(np.int16) - src.min(2).astype(np.int16)
+            out = np.where((sat > 85)[:, :, None], src, out)
         return out
 
     def _scale_for(self, p: fitz.Page) -> float:
@@ -479,7 +495,8 @@ class PageView(QScrollArea):
             img = QImage(pix.samples, pix.width, pix.height, pix.stride,
                          QImage.Format.Format_RGB888)
         else:
-            self._buf = np.ascontiguousarray(self._recolour(pix))
+            preserve = self._page in self.glossed_pages
+            self._buf = np.ascontiguousarray(self._recolour(pix, preserve))
             img = QImage(self._buf.data, pix.width, pix.height, pix.width * 3,
                          QImage.Format.Format_RGB888)
 
@@ -782,6 +799,7 @@ class Reader(QMainWindow):
          show_bar, self.nav_mode, self.scope, self.bookmarks) = self._restore()
 
         self.view = PageView(self.doc)
+        self.view.glossed_pages = self.index.glossed_pages
         self.view.mode, self.view.zoom = mode, zoom
         self._apply_colour()
 
@@ -1020,7 +1038,8 @@ class Reader(QMainWindow):
             pix = self.doc[self.page - 1].get_pixmap(matrix=fitz.Matrix(zoom, zoom),
                                                      alpha=False)
             # colour it with the current theme + brightness, exactly like the view
-            arr = np.ascontiguousarray(self.view._recolour(pix))
+            preserve = self.page in self.index.glossed_pages
+            arr = np.ascontiguousarray(self.view._recolour(pix, preserve))
             if crop:                              # drop trailing empty rows (+margin)
                 paper = np.array(self.view.paper, dtype=np.int16)
                 has_ink = (np.abs(arr.astype(np.int16) - paper).max(2) > 24).any(1)

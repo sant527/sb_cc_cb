@@ -13,6 +13,7 @@ and the text stays selectable.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 import fitz
 import numpy as np
@@ -32,6 +33,14 @@ BELOW_GAP = 14       # gap before the word-for-word / translation block
 DEVA_GAP = 16        # horizontal gap between two clubbed Devanagari padas
 STRETCH_MARGIN = 14  # side margin for the full-width stretched reading page
 STRETCH_GAP = 22     # gap between padas on a 2-per-row stretched page
+
+# Glossed page: printed word-for-word placed above each Devanagari word.
+GLOSS_REG = "/System/Library/Fonts/Supplemental/Times New Roman.ttf"
+GLOSS_ITA = "/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf"
+GLOSS_SIZE = 12.5
+GLOSS_A = (0.48, 0.13, 0.62)      # purple — alternates per word (meaning + underline)
+GLOSS_B = (0.06, 0.46, 0.48)      # teal
+GLOSS_TRANS = (0.55, 0.55, 0.55)  # subtle grey for the transliteration line
 
 SEP = " // "         # separator between side-by-side transliteration padas
 SEP_FONT = "times-italic"
@@ -473,6 +482,214 @@ def draw_stretched(new, src, pno, per_row=1, translit=True):
             w, h = t.width * TL_SCALE, t.height * TL_SCALE
             new.show_pdf_page(fitz.Rect((W - w) / 2, y, (W - w) / 2 + w, y + h), src, pno, clip=t)
             y += h + 2
+    if below:
+        top = min(r[1] for r in below) - 2
+        bot = max(r[3] for r in below) + 2
+        y += BELOW_GAP
+        new.show_pdf_page(fitz.Rect(0, y, W, y + (bot - top)), src, pno, clip=fitz.Rect(0, top, W, bot))
+    return True
+
+
+# --------------------------------------------------------------------------
+# Glossed page — the printed word-for-word placed above each Devanagari word
+# --------------------------------------------------------------------------
+# Only the meanings already printed below the sloka are used (never invented).
+# Each word's roman transliteration + English meaning is aligned to a position
+# in its pada (approximate — the Devanagari is sandhi-joined) and drawn above the
+# full-width Devanagari, with a dark underline marking each word's span.
+
+
+def _word_for_word(page):
+    """(word, meaning) pairs from the printed word-for-word block (legacy text).
+
+    The block is exactly the em-dash lines (the translation paragraph beneath has
+    none), joined — don't cut at the first period: a meaning may contain one
+    ('…Nakula and Sahadeva).'), and combined verses run several sentences."""
+    lines = [ln for ln in page.get_text().split("\n") if "—" in ln]   # em-dash
+    if not lines:
+        return []
+    out = []
+    for part in " ".join(lines).split(";"):
+        if "—" in part:
+            w, m = part.split("—", 1)
+            w, m = w.strip(), m.strip().rstrip(".").strip()
+            if w and m:
+                out.append((w, m))
+    return out
+
+
+def _gloss_norm(s, readable):
+    s = unicodedata.normalize("NFKD", readable(s))
+    return "".join(c for c in s if c.isalpha() and not unicodedata.combining(c)).lower()
+
+
+def _align_glosses(entries, tt, ndeva, readable):
+    """place[deva_line] = [(frac, translit, meaning), …]. A leading attribution
+    line (… uvāca) is peeled off first (one pada, one line); the body's padas then
+    divide evenly across the remaining lines, k per line, and a word's x-fraction
+    is (slot + within-pada)/k (so two-padas/line verses map left half / right half).
+    None when the body padas don't divide evenly (an irregular verse)."""
+    if not tt or ndeva == 0:
+        return None
+    a = min(leading_attributions(tt), ndeva - 1, len(tt) - 1)   # attribution lines peeled off
+    a = max(a, 0)
+    body_deva, body_tt = ndeva - a, len(tt) - a
+    if body_deva <= 0 or body_tt <= 0 or body_tt % body_deva != 0:
+        return None
+    bk = body_tt // body_deva
+
+    def pada_line(pi):                               # pada index -> (deva line, slot, k of line)
+        if pi < a:
+            return pi, 0, 1
+        b = pi - a
+        return a + b // bk, b % bk, bk
+
+    padas = [_gloss_norm(t, readable) for t in tt]
+    bounds, glob = [], ""
+    for i, pn in enumerate(padas):
+        bounds.append((len(glob), len(glob) + len(pn), i, len(pn)))
+        glob += pn
+    total = len(glob)
+    words = [(w, mn, _gloss_norm(w, readable)) for w, mn in entries]
+    words = [x for x in words if x[2]]
+    n = len(words)
+    if n == 0 or total == 0:
+        return None
+
+    # ANCHOR: match the words that survive sandhi (in order), recording their real
+    # char position. cursor only moves forward, so anchors stay monotonic.
+    pos = [None] * n
+    cursor = anchors = 0
+    for i, (w, mn, wn) in enumerate(words):
+        idx, ml = glob.find(wn, cursor), len(wn)
+        if idx < 0:
+            for kk in range(len(wn) - 1, 3, -1):     # longest prefix that still matches
+                idx = glob.find(wn[:kk], cursor)
+                if idx >= 0:
+                    ml = kk
+                    break
+        if idx >= 0:
+            pos[i], cursor, anchors = idx, idx + max(1, ml), anchors + 1
+    if anchors == 0:                                 # nothing matched -> can't align
+        return None
+
+    # INTERPOLATE the sandhi-missed words: they sit between their matched neighbours,
+    # spaced by word length. Sentinels pin the ends of the verse.
+    weight = [max(1, len(wn)) for _, _, wn in words]
+    cumw, acc = [], 0
+    for wt in weight:
+        cumw.append(acc)
+        acc += wt
+    ax = [0.0] + [cumw[i] for i in range(n) if pos[i] is not None] + [float(acc)]
+    ay = [0.0] + [float(pos[i]) for i in range(n) if pos[i] is not None] + [float(total)]
+
+    def interp(cw):
+        for j in range(1, len(ax)):
+            if cw <= ax[j]:
+                x0, x1, y0, y1 = ax[j - 1], ax[j], ay[j - 1], ay[j]
+                return y0 if x1 == x0 else y0 + (y1 - y0) * (cw - x0) / (x1 - x0)
+        return ay[-1]
+
+    place = [[] for _ in range(ndeva)]
+    for i, (w, mn, wn) in enumerate(words):
+        p = pos[i] if pos[i] is not None else interp(cumw[i])
+        for gs, ge, pi, pl in bounds:
+            if gs <= p < ge:
+                line, slot, klen = pada_line(pi)
+                frac = (slot + min(max((p - gs) / pl, 0.0), 1.0)) / klen
+                place[line].append((frac, readable(w).replace(" ", ""), readable(mn)))
+                break
+    return place
+
+
+def draw_glossed(new, src, pno):
+    """Glossed reading page — full-width Devanagari (one pada per row) with each
+    printed word-for-word gloss above its word. False when the verse has no
+    parseable word-for-word or its padas don't divide evenly into the Devanagari
+    lines (an irregular verse that can't be word-aligned)."""
+    from reader import readable                       # lazy: only the build imports reader
+    page = src[pno]
+    deva, tl, tt, is_rm = classify_lines(page)
+    if not deva or not tt:
+        return False
+    # fold a wrapped continuation (a short trailing line, e.g. a lone 'dhīmahi'
+    # off a long-metre pada) back into its pada, so the pada count matches the
+    # Devanagari — this rescues verses like SB 1.1.1
+    if tl:
+        full = max(b.width for b in tl)
+        merged = []
+        for t, b in zip(tt, tl):
+            if merged and b.width < WRAP_MAX_FRAC * full:
+                merged[-1] += " " + t
+            else:
+                merged.append(t)
+        tt = merged
+    entries = _word_for_word(page)
+    if not entries:
+        return False
+    place = _align_glosses(entries, tt, len(deva), readable)
+    if place is None:                                # irregular pada/line structure
+        return False
+
+    W, H = page.rect.width, page.rect.height
+    xclips = [_strip_danda(page, b) for b in deva]
+    ys = expand_deva(page, deva) if is_rm else deva
+    clips = [fitz.Rect(xclips[i].x0, ys[i].y0, xclips[i].x1, ys[i].y1) for i in range(len(deva))]
+    sc = (W - 2 * STRETCH_MARGIN) / max(c.width for c in clips)
+    verse_top = min(r.y0 for r in deva + tl)
+    verse_bot = max(r.y1 for r in deva + tl)
+    # only the translation goes below — the word-for-word is redundant here (it's
+    # the glosses above). The word-for-word block carries the em-dashes; the
+    # translation is the prose paragraph beneath it, so keep only what sits below
+    # the last em-dash line.
+    below_all = [(sp["bbox"], sp["text"]) for b in page.get_text("dict")["blocks"]
+                 for ln in b.get("lines", []) for sp in ln["spans"]
+                 if sp["text"].strip() and sp["bbox"][1] > verse_bot + 1 and sp["bbox"][3] < H - 30]
+    dash_bottom = max((bb[3] for bb, t in below_all if "—" in t), default=verse_bot)
+    below = [bb for bb, t in below_all if bb[1] > dash_bottom - 1]
+
+    new.insert_font(fontname="GR", fontfile=GLOSS_REG)
+    new.insert_font(fontname="GI", fontfile=GLOSS_ITA)
+    freg, fita = fitz.Font(fontfile=GLOSS_REG), fitz.Font(fontfile=GLOSS_ITA)
+    GS, LH = GLOSS_SIZE, GLOSS_SIZE + 1.5
+
+    # lay out each line's glosses (positions + stagger level) up front, so a line
+    # reserves only the vertical space its own glosses need — no wasted gap.
+    layouts = []
+    for i, c in enumerate(clips):
+        w = c.width * sc
+        x0 = (W - w) / 2
+        pl = sorted(place[i]) if i < len(place) else []
+        items, row_end, maxlvl = [], [], 0     # row_end[l] = right edge used at stagger level l
+        for j, (frac, word, mn) in enumerate(pl):
+            gx = x0 + frac * w
+            xb = x0 + (pl[j + 1][0] if j + 1 < len(pl) else 1.0) * w
+            gw = max(fita.text_length(word, GS), freg.text_length(mn, GS))
+            lvl = 0                            # lowest row where this gloss doesn't collide
+            while lvl < len(row_end) and gx < row_end[lvl] + 5:
+                lvl += 1
+            if lvl == len(row_end):
+                row_end.append(0.0)
+            row_end[lvl] = gx + gw
+            items.append((gx, xb, word, mn, lvl))
+            maxlvl = max(maxlvl, lvl)
+        layouts.append((c, x0, w, c.height * sc, items, maxlvl))
+
+    new.show_pdf_page(fitz.Rect(0, 0, W, verse_top), src, pno, clip=fitz.Rect(0, 0, W, verse_top))
+    gi = 0
+    y = verse_top
+    for c, x0, w, h, items, maxlvl in layouts:
+        y += (2 + 2 * maxlvl) * LH + 4               # just enough for translit + meaning
+        new.show_pdf_page(fitz.Rect(x0, y, x0 + w, y + h), src, pno, clip=c)
+        base = y - 6
+        for gx, xb, word, mn, lvl in items:
+            col = GLOSS_A if gi % 2 == 0 else GLOSS_B     # meaning + underline alternate
+            gi += 1
+            yb = base - lvl * 2 * LH
+            new.insert_text((gx, yb - LH), word, fontname="GI", fontsize=GS, color=GLOSS_TRANS)
+            new.insert_text((gx, yb), mn, fontname="GR", fontsize=GS, color=col)
+            new.draw_line((gx + 2, y + h + 2), (xb - 2, y + h + 2), color=col, width=2.6)
+        y += h + VERSE_GAP
     if below:
         top = min(r[1] for r in below) - 2
         bot = max(r[3] for r in below) + 2

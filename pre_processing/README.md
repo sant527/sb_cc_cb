@@ -37,6 +37,7 @@ uv run python pre_processing/build_inline.py        # 2) splice + outline     (~
 uv run python pre_processing/add_clubbed.py         # 3) add clubbed pages    (~10 min)
 uv run python pre_processing/add_stretched.py       # 4) add stretched pages  (~25 min)
 uv run python pre_processing/add_stretched_notl.py  # 5) add no-roman pages   (~25 min)
+uv run python pre_processing/add_glossed.py         # 6) add glossed pages    (~90 min)
 ```
 
 That's it — the result is `SB_CC_CB_ALL_NEW_INDEX_Oct3_2021_inline_interleaved.pdf`,
@@ -86,6 +87,17 @@ self-contained: pages in reading order **and** a working outline. Ship just that
    verse's `▸ stretched (2/row)` page, adding two `▸ stretched no-roman` children
    (reader modes *Stretch 1/row (no roman)* and *Stretch 2/row (no roman)*). Run
    after step 4. Idempotent; `STRETCH_VERIFY=1` supported.
+
+6. **`add_glossed.py`** — a **glossed** reading page per SB verse: the full-width
+   Devanagari with each printed word-for-word gloss placed above its word
+   (`interleave.draw_glossed`) — transliteration grey, meaning + underline
+   alternating purple/teal — and only the translation below (the word-for-word is
+   redundant here). The ~6,985 one-pada/line verses get a real glossed page; the
+   rest (two-padas/line, can't be word-aligned) get a **repeat of their stretched
+   1/row page** so every verse has the *Glossed* nav mode. One page per verse
+   after its last stretched page, `▸ glossed` outline child. The reader renders
+   these with saturation preserved so the purple/teal survive theming. Idempotent;
+   `STRETCH_VERIFY=1` supported.
 
 ### `add_outline.py` (standalone)
 
