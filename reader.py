@@ -80,7 +80,9 @@ CURSOR_HIDE_MS = 2500      # hide the mouse after this idle time in fullscreen
 MODE_NAMES = ("Translation", "Sloka", "Interleaved",   # nav modes cycled by `s`
               "Stretch 1/row", "Stretch 2/row",
               "Stretch 1/row (no roman)", "Stretch 2/row (no roman)",
-              "Glossed")
+              "Glossed", "Glossed (fit)")
+GLOSS_FIT_MODE = 8            # same glossed page as mode 7, but the view fits its
+GLOSS_FIT_PAD = 10.0         # content (to end of translation +pad) into the window
 
 
 # --------------------------------------------------------------------------
@@ -341,7 +343,7 @@ class Index:
         3=stretch 1/row, 4=stretch 2/row), falling back when that mode isn't
         available for the verse."""
         e = self.entries[i]
-        if mode == 7 and e.glossed > 0:
+        if mode in (7, 8) and e.glossed > 0:     # 8 = glossed page, fit-to-content view
             return e.glossed
         if mode == 6 and e.stretch4 > 0:
             return e.stretch4
@@ -375,6 +377,7 @@ class Index:
             m.append(6)
         if e.glossed > 0:
             m.append(7)
+            m.append(8)                          # glossed, fit-to-content view
         return m
 
     @staticmethod
@@ -422,6 +425,8 @@ class PageView(QScrollArea):
         self.glossed_pages: set[int] = set()   # rendered with colour preserved
         self.zoom = 1.0
         self.mode = "width"                    # "width" | "height" | "zoom"
+        self.gloss_fit = False                 # fit the glossed page's content into the window
+        self._cbot: dict[int, float] = {}      # page number -> content bottom (points), cached
         self._page = 1
         self._buf: np.ndarray | None = None   # QImage does not copy; keep it alive
 
@@ -458,8 +463,26 @@ class PageView(QScrollArea):
             out = np.where((sat > 85)[:, :, None], src, out)
         return out
 
+    def _content_bottom(self, p: fitz.Page) -> float:
+        """Bottom of the actual content (last inked row) in page points — lets the
+        glossed-fit view ignore the trailing whitespace below the translation."""
+        if p.number in self._cbot:
+            return self._cbot[p.number]
+        pm = p.get_pixmap(alpha=False)             # 1:1, source is dark-on-white
+        a = np.frombuffer(pm.samples, dtype=np.uint8).reshape(pm.height, pm.stride)
+        rows = np.nonzero((a[:, : pm.width * 3].reshape(pm.height, pm.width, 3)
+                           .min(2) < 235).any(1))[0]
+        bot = float(rows[-1] + 1) if len(rows) else p.rect.height
+        self._cbot[p.number] = bot
+        return bot
+
     def _scale_for(self, p: fitz.Page) -> float:
         """Resolve the current fit mode into a render scale."""
+        if self.gloss_fit:                         # fit content (to end of translation
+            avail_w = max(200, self.viewport().width() - 24)   # + pad) into the window
+            avail_h = max(200, self.viewport().height() - 24)
+            return min(avail_w / p.rect.width,
+                       avail_h / (self._content_bottom(p) + GLOSS_FIT_PAD))
         match self.mode:
             case "width":
                 return max(200, self.viewport().width() - 24) / p.rect.width
@@ -474,9 +497,10 @@ class PageView(QScrollArea):
 
     def zoom_by(self, factor: float) -> None:
         # leaving a fit mode: start from what's on screen, so +/- doesn't jump
-        if self.mode != "zoom":
+        if self.mode != "zoom" or self.gloss_fit:
             self.zoom = self._scale_for(self.doc[self._page - 1])
             self.mode = "zoom"
+            self.gloss_fit = False             # +/- takes over; navigation re-fits
         self.zoom = max(ZOOM_MIN, min(ZOOM_MAX, self.zoom * factor))
         self.render(self._page)
 
@@ -521,7 +545,7 @@ class PageView(QScrollArea):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
-        if self.mode in ("width", "height"):   # a fit mode tracks the window
+        if self.mode in ("width", "height") or self.gloss_fit:   # a fit tracks the window
             self.render(self._page)
 
 
@@ -889,6 +913,9 @@ class Reader(QMainWindow):
 
     def goto(self, page: int) -> None:
         self.page = max(1, min(page, self.doc.page_count))
+        # the glossed-fit nav mode re-fits each glossed page's content to the window
+        self.view.gloss_fit = (self.nav_mode == GLOSS_FIT_MODE
+                               and self.page in self.index.glossed_pages)
         self.view.render(self.page)
         self._sync_status()
         self._save_soon.start(600)

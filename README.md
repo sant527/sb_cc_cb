@@ -120,7 +120,7 @@ Forward is **down / right**.
 | `Shift`+`Ctrl`+`↑`/`↓` | scroll more (3×) |
 | `Enter` | **random** verse (from the chosen scope, in the current nav mode) |
 | `r` | choose which cantos/sections `Enter` draws from |
-| `s` | cycle nav mode: translation → sloka → interleaved → stretch 1/row → stretch 2/row → stretch 1/row (no roman) → stretch 2/row (no roman) → glossed |
+| `s` | cycle nav mode: translation → sloka → interleaved → stretch 1/row → stretch 2/row → stretch 1/row (no roman) → stretch 2/row (no roman) → glossed → glossed (fit) |
 | `Space` / `PgDn` | one page forward |
 | `PgUp` | one page back |
 | `t` | theme picker |
@@ -170,6 +170,10 @@ remembered between runs.
 8. **Glossed** — the stretched Devanagari with each printed word-for-word gloss
    placed **above its word** (transliteration grey, meaning + underline alternating
    purple/teal), and only the translation below (SB)
+9. **Glossed (fit)** — the same glossed page, but the view auto-fits each verse's
+   content (glosses + translation) into the window, so every verse fills the screen
+   without re-zooming; taller verses simply render smaller. `+`/`−` temporarily
+   overrides to manual zoom; moving to the next verse re-fits (SB)
 
 The status bar shows `SLOKA` / `INTERLEAVED` when you're on one, and the mode is
 remembered between runs. `s` skips modes a verse doesn't have: CC/CB print verse
