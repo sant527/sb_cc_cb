@@ -602,6 +602,99 @@ def _align_glosses(entries, tt, ndeva, readable):
     return place
 
 
+def _gloss_degenerate(place):
+    """True when a placement is visibly wrong: some Devanagari line got no gloss
+    while another is overloaded (≥75% of all glosses). This is the signature of a
+    word-for-word printed in anvaya (grammatical) rather than verse-line order —
+    the forward-cursor aligner squashes it all onto one pada."""
+    if place is None:
+        return True
+    counts = [len(x) for x in place]
+    total = sum(counts)
+    if total == 0:
+        return True
+    if len(place) >= 2 and sum(1 for c in counts if c) < len(place) and total >= len(place):
+        return max(counts) / total >= 0.75
+    return False
+
+
+def _align_glosses_oi(entries, tt, ndeva, readable):
+    """Order-independent aligner for anvaya-ordered word-for-word blocks. Each
+    headword finds its own position in the sloka (all occurrences, verbatim then
+    longest-prefix ≥4 for sandhi), and matches are assigned greedily by confidence
+    with claimed spans so repeated particles don't collide. Words that survive no
+    match (fully sandhi-hidden) are dropped rather than guessed — better a correct
+    partial gloss than a scrambled full one. Same pada/line geometry as the primary
+    aligner; None when the padas don't divide evenly or nothing matched."""
+    if not tt or ndeva == 0:
+        return None
+    a = max(min(leading_attributions(tt), ndeva - 1, len(tt) - 1), 0)
+    body_deva, body_tt = ndeva - a, len(tt) - a
+    if body_deva <= 0 or body_tt <= 0 or body_tt % body_deva != 0:
+        return None
+    bk = body_tt // body_deva
+
+    def pada_line(pi):
+        if pi < a:
+            return pi, 0, 1
+        b = pi - a
+        return a + b // bk, b % bk, bk
+
+    padas = [_gloss_norm(t, readable) for t in tt]
+    bounds, glob = [], ""
+    for i, pn in enumerate(padas):
+        bounds.append((len(glob), len(glob) + len(pn), i, len(pn)))
+        glob += pn
+    total = len(glob)
+    words = [(w, mn, _gloss_norm(w, readable)) for w, mn in entries]
+    words = [x for x in words if x[2]]
+    n = len(words)
+    if n == 0 or total == 0:
+        return None
+
+    cands = []                                   # (confidence, word-index, pos, match-len)
+    for i, (w, mn, wn) in enumerate(words):
+        starts, st = [], glob.find(wn)
+        while st >= 0:
+            starts.append((len(wn), st, len(wn)))
+            st = glob.find(wn, st + 1)
+        if not starts and len(wn) > 4:           # sandhi: fall back to longest prefix
+            for kk in range(len(wn) - 1, 3, -1):
+                st, found = glob.find(wn[:kk]), False
+                while st >= 0:
+                    starts.append((kk, st, kk)); found = True
+                    st = glob.find(wn[:kk], st + 1)
+                if found:
+                    break
+        cands += [(conf, i, pos, ml) for conf, pos, ml in starts]
+    cands.sort(reverse=True)                      # most-confident matches claim first
+    posn, claimed = [None] * n, []
+
+    def overlaps(s, e):
+        return any(not (e <= cs or s >= ce) for cs, ce in claimed)
+
+    for conf, i, pos, ml in cands:
+        if posn[i] is not None or overlaps(pos, pos + ml):
+            continue
+        posn[i] = pos
+        claimed.append((pos, pos + ml))
+    if not any(p is not None for p in posn):
+        return None
+
+    place = [[] for _ in range(ndeva)]
+    for i, (w, mn, wn) in enumerate(words):
+        p = posn[i]
+        if p is None:                             # unlocatable -> skip, don't guess
+            continue
+        for gs, ge, pi, pl in bounds:
+            if gs <= p < ge:
+                line, slot, klen = pada_line(pi)
+                frac = (slot + min(max((p - gs) / pl, 0.0), 1.0)) / klen
+                place[line].append((frac, readable(w).replace(" ", ""), readable(mn)))
+                break
+    return place
+
+
 def draw_glossed(new, src, pno):
     """Glossed reading page — full-width Devanagari (one pada per row) with each
     printed word-for-word gloss above its word. False when the verse has no
@@ -630,6 +723,10 @@ def draw_glossed(new, src, pno):
     place = _align_glosses(entries, tt, len(deva), readable)
     if place is None:                                # irregular pada/line structure
         return False
+    if _gloss_degenerate(place):                     # anvaya-ordered word-for-word:
+        place = _align_glosses_oi(entries, tt, len(deva), readable)   # retry order-free
+        if _gloss_degenerate(place):                 # still wrong -> repeat stretched page
+            return False
 
     W, H = page.rect.width, page.rect.height
     xclips = [_strip_danda(page, b) for b in deva]
