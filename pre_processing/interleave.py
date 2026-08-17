@@ -652,26 +652,32 @@ def _align_glosses_oi(entries, tt, ndeva, readable):
     if n == 0 or total == 0:
         return None
 
+    def occ(key):                                # all verbatim start positions of key
+        out, st = [], glob.find(key)
+        while st >= 0:
+            out.append(st)
+            st = glob.find(key, st + 1)
+        return out
+
     cands = []                                   # (confidence, word-index, pos, match-len)
     for i, (w, mn, wn) in enumerate(words):
-        starts, st = [], glob.find(wn)
-        while st >= 0:
-            starts.append((len(wn), st, len(wn)))
-            st = glob.find(wn, st + 1)
-        if not starts and len(wn) > 4:           # sandhi: fall back to longest prefix
+        starts = [(len(wn), p, len(wn)) for p in occ(wn)]     # verbatim
+        if not starts and wn[:1] in "aiueo" and len(wn) > 4:  # leading vowel elided (avagraha, e.g. aśayiṣṭa -> 'śayiṣṭa)
+            tail = wn[1:]
+            starts = [(len(tail), p, len(tail)) for p in occ(tail)]
+        if not starts and len(wn) > 4:                        # trailing sandhi: longest prefix
             for kk in range(len(wn) - 1, 3, -1):
-                st, found = glob.find(wn[:kk]), False
-                while st >= 0:
-                    starts.append((kk, st, kk)); found = True
-                    st = glob.find(wn[:kk], st + 1)
-                if found:
+                ps = occ(wn[:kk])
+                if ps:
+                    starts = [(kk, p, kk) for p in ps]
                     break
         cands += [(conf, i, pos, ml) for conf, pos, ml in starts]
     cands.sort(reverse=True)                      # most-confident matches claim first
     posn, claimed = [None] * n, []
 
-    def overlaps(s, e):
-        return any(not (e <= cs or s >= ce) for cs, ce in claimed)
+    def overlaps(s, e):                          # tolerate a 1-char shared vowel: adjacent
+        return any(min(e, ce) - max(s, cs) >= 2   # words fuse at the sandhi boundary (ā+a→ā)
+                   for cs, ce in claimed)
 
     for conf, i, pos, ml in cands:
         if posn[i] is not None or overlaps(pos, pos + ml):
