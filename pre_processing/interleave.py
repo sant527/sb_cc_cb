@@ -603,10 +603,12 @@ def _align_glosses(entries, tt, ndeva, readable):
 
 
 def _gloss_degenerate(place):
-    """True when a placement is visibly wrong: some Devanagari line got no gloss
-    while another is overloaded (≥75% of all glosses). This is the signature of a
-    word-for-word printed in anvaya (grammatical) rather than verse-line order —
-    the forward-cursor aligner squashes it all onto one pada."""
+    """True when a placement is visibly wrong — the signature of a word-for-word
+    printed in anvaya (grammatical) rather than verse-line order, which the
+    forward-cursor aligner squashes. Two tells:
+      (a) a Devanagari line got no gloss while another hogs ≥75% of them, and
+      (b) x-piling: a majority of one line's glosses collapse into a narrow band
+          (interpolated words stranded past the last anchor pile at one x)."""
     if place is None:
         return True
     counts = [len(x) for x in place]
@@ -614,7 +616,19 @@ def _gloss_degenerate(place):
     if total == 0:
         return True
     if len(place) >= 2 and sum(1 for c in counts if c) < len(place) and total >= len(place):
-        return max(counts) / total >= 0.75
+        if max(counts) / total >= 0.75:
+            return True
+    for line in place:                            # (b) narrow-band pile-up on any line
+        k = len(line)
+        if k >= 4:
+            fr = sorted(f for f, _, _ in line)
+            j = best = 0
+            for i in range(k):
+                while fr[i] - fr[j] > 0.2:         # widest run inside a 0.2 frac window
+                    j += 1
+                best = max(best, i - j + 1)
+            if best >= 4 and best >= 0.6 * k:
+                return True
     return False
 
 
@@ -751,8 +765,6 @@ def draw_glossed(new, src, pno):
     dash_bottom = max((bb[3] for bb, t in below_all if "—" in t), default=verse_bot)
     below = [bb for bb, t in below_all if bb[1] > dash_bottom - 1]
 
-    new.insert_font(fontname="GR", fontfile=GLOSS_REG)
-    new.insert_font(fontname="GI", fontfile=GLOSS_ITA)
     freg, fita = fitz.Font(fontfile=GLOSS_REG), fitz.Font(fontfile=GLOSS_ITA)
     GS, LH = GLOSS_SIZE, GLOSS_SIZE + 1.5
 
@@ -778,6 +790,27 @@ def draw_glossed(new, src, pno):
             maxlvl = max(maxlvl, lvl)
         layouts.append((c, x0, w, c.height * sc, items, maxlvl))
 
+    tl_top = tl_bot = None
+    if below:
+        tl_top = min(r[1] for r in below) - 2
+        tl_bot = max(r[3] for r in below) + 2
+
+    # a crowded verse (deep gloss stacks) can push the translation past the source
+    # page height and clip it — grow the page to exactly the height the content
+    # needs, so nothing is ever cut off the bottom.
+    needed = verse_top
+    for c, x0, w, h, items, maxlvl in layouts:
+        needed += (2 + 2 * maxlvl) * LH + 4 + h + VERSE_GAP
+    if below:
+        needed += BELOW_GAP + (tl_bot - tl_top)
+    needed += 80                                     # trailing whitespace (room to scroll)
+    if needed > H:
+        new.set_mediabox(fitz.Rect(0, 0, W, needed))   # before any content is placed
+        H = needed
+
+    new.insert_font(fontname="GR", fontfile=GLOSS_REG)
+    new.insert_font(fontname="GI", fontfile=GLOSS_ITA)
+
     new.show_pdf_page(fitz.Rect(0, 0, W, verse_top), src, pno, clip=fitz.Rect(0, 0, W, verse_top))
     gi = 0
     y = verse_top
@@ -794,8 +827,6 @@ def draw_glossed(new, src, pno):
             new.draw_line((gx + 2, y + h + 2), (xb - 2, y + h + 2), color=col, width=2.6)
         y += h + VERSE_GAP
     if below:
-        top = min(r[1] for r in below) - 2
-        bot = max(r[3] for r in below) + 2
         y += BELOW_GAP
-        new.show_pdf_page(fitz.Rect(0, y, W, y + (bot - top)), src, pno, clip=fitz.Rect(0, top, W, bot))
+        new.show_pdf_page(fitz.Rect(0, y, W, y + (tl_bot - tl_top)), src, pno, clip=fitz.Rect(0, tl_top, W, tl_bot))
     return True
