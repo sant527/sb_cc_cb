@@ -762,29 +762,33 @@ def draw_glossed(new, src, pno):
     # themselves contain em-dashes ("… descendants of Vṛṣṇi — Bhoja … etc. — who …")
     # — so find the word-for-word block by its tight spacing and take the paragraph
     # after the gap.
-    below_all = [(sp["bbox"], sp["text"]) for b in page.get_text("dict")["blocks"]
+    below_all = [(sp["bbox"], sp["text"], bool(sp["flags"] & 2))
+                 for b in page.get_text("dict")["blocks"]
                  for ln in b.get("lines", []) for sp in ln["spans"]
                  if sp["text"].strip() and sp["bbox"][1] > verse_bot + 1 and sp["bbox"][3] < H - 30]
-    lines = []                                       # group spans into text lines by y
-    for bb, t in sorted(below_all, key=lambda s: (round(s[0][1]), s[0][0])):
+    lines = []                            # [y0, text, x0, x1, italic_chars, total_chars]
+    for bb, t, it in sorted(below_all, key=lambda s: (round(s[0][1]), s[0][0])):
         if lines and abs(bb[1] - lines[-1][0]) <= 3:
-            lines[-1][1] = max(lines[-1][1], bb[3]); lines[-1][2] += t
+            L = lines[-1]
+            L[1] += t; L[2] = min(L[2], bb[0]); L[3] = max(L[3], bb[2])
+            L[4] += len(t) if it else 0; L[5] += len(t)
         else:
-            lines.append([bb[1], bb[3], t])
-    # the word-for-word / translation boundary is the blank-line paragraph gap, not
-    # the em-dash pattern — the word-for-word can wrap onto a continuation line with
-    # no dash, and the translation can contain dashes. Consecutive tight lines
-    # overlap (bbox y1 > next y0, so the gap is ~0 or negative); only a paragraph
-    # break opens a real positive gap. Take the first such gap after the block start.
-    start = next((i for i, ln in enumerate(lines) if "—" in ln[2]), None)
+            lines.append([bb[1], t, bb[0], bb[2], len(t) if it else 0, len(t)])
+    # find where the translation starts. Text-only signals (paragraph gap, em-dash,
+    # semicolons) all fail on some verse: the gap is sometimes absent (SB 8.11.23),
+    # translations can contain em-dashes (SB 1.11.11) and semicolons (SB 5.23.7), and
+    # the last word-for-word meaning can wrap onto plain roman lines (SB 1.7.12). The
+    # reliable mark is the FONT: word-for-word terms are italic transliteration,
+    # while the translation is roman prose that opens with a capital. So the
+    # translation is the first line that starts with a capital, is full-width, and is
+    # almost all roman — skipping italic word-for-word lines and their roman wraps.
     translation_top = H
-    if start is not None and lines:
-        lh = sorted(ln[1] - ln[0] for ln in lines)[len(lines) // 2]   # median line height
-        for i in range(start + 1, len(lines)):
-            if lines[i][0] - lines[i - 1][1] > 0.5 * lh:              # paragraph gap
-                translation_top = lines[i][0]
-                break
-    below = [bb for bb, t in below_all if bb[1] >= translation_top - 2]
+    for y0, t, x0, x1, ic, tc in lines:
+        first = next((c for c in t if c.isalpha()), "")
+        if first.isupper() and (x1 - x0) > 0.45 * W and ic / max(1, tc) < 0.15:
+            translation_top = y0
+            break
+    below = [bb for bb, t, it in below_all if bb[1] >= translation_top - 2]
 
     freg, fita = fitz.Font(fontfile=GLOSS_REG), fitz.Font(fontfile=GLOSS_ITA)
     GS, LH = GLOSS_SIZE, GLOSS_SIZE + 1.5
