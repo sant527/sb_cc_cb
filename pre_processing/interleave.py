@@ -632,6 +632,29 @@ def _gloss_degenerate(place):
     return False
 
 
+def _edit_le1(a, b):
+    """True when strings a and b are within Levenshtein distance 1 (one
+    substitution, insertion, or deletion) — enough to bridge a single sandhi
+    character between a word-for-word headword and the sloka."""
+    la, lb = len(a), len(b)
+    if la == lb:
+        return sum(x != y for x, y in zip(a, b)) <= 1
+    if abs(la - lb) != 1:
+        return False
+    if la > lb:                                   # make a the shorter
+        a, b, la, lb = b, a, lb, la
+    i = j = 0
+    skipped = False
+    while i < la and j < lb:                      # is a b with one char deleted?
+        if a[i] == b[j]:
+            i += 1; j += 1
+        elif skipped:
+            return False
+        else:
+            skipped = True; j += 1
+    return True
+
+
 def _align_glosses_oi(entries, tt, ndeva, readable):
     """Order-independent aligner for anvaya-ordered word-for-word blocks. Each
     headword finds its own position in the sloka (all occurrences, verbatim then
@@ -698,6 +721,25 @@ def _align_glosses_oi(entries, tt, ndeva, readable):
             continue
         posn[i] = pos
         claimed.append((pos, pos + ml))
+
+    # second pass: a word still unplaced usually differs from the sloka by one
+    # sandhi character — a final consonant (yat → yad), a coalesced vowel
+    # (sa-anubandhasya → sānubandhasya) — or its only exact hit was a substring of
+    # a longer word already claimed (yat inside man·yat·e). Place it at the leftmost
+    # unclaimed span that matches within one edit.
+    for i, (w, mn, wn) in enumerate(words):
+        if posn[i] is not None or len(wn) < 3:
+            continue
+        for L in (len(wn), len(wn) - 1, len(wn) + 1):
+            if L < 3:
+                continue
+            hit = next((p for p in range(len(glob) - L + 1)
+                        if not overlaps(p, p + L) and _edit_le1(wn, glob[p:p + L])), None)
+            if hit is not None:
+                posn[i] = hit
+                claimed.append((hit, hit + L))
+                break
+
     if not any(p is not None for p in posn):
         return None
 
