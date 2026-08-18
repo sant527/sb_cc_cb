@@ -499,23 +499,26 @@ def draw_stretched(new, src, pno, per_row=1, translit=True):
 # full-width Devanagari, with a dark underline marking each word's span.
 
 
-def _word_for_word(page):
-    """(word, meaning) pairs from the printed word-for-word block (legacy text).
-
-    The block is exactly the em-dash lines (the translation paragraph beneath has
-    none), joined — don't cut at the first period: a meaning may contain one
-    ('…Nakula and Sahadeva).'), and combined verses run several sentences."""
-    lines = [ln for ln in page.get_text().split("\n") if "—" in ln]   # em-dash
-    if not lines:
-        return []
+def _parse_wff(text):
+    """(word, meaning) pairs from word-for-word text: split on ';' then the em-dash.
+    Don't cut at the first period — a meaning may contain one ('…Nakula and
+    Sahadeva).') and combined verses run several sentences."""
     out = []
-    for part in " ".join(lines).split(";"):
+    for part in text.split(";"):
         if "—" in part:
             w, m = part.split("—", 1)
             w, m = w.strip(), m.strip().rstrip(".").strip()
             if w and m:
                 out.append((w, m))
     return out
+
+
+def _word_for_word(page):
+    """(word, meaning) pairs from the whole page's em-dash lines (used as a cheap
+    'is there a word-for-word block?' probe; draw_glossed parses the precise region
+    itself so wrapped meanings are kept)."""
+    lines = [ln for ln in page.get_text().split("\n") if "—" in ln]
+    return _parse_wff(" ".join(lines)) if lines else []
 
 
 def _gloss_norm(s, readable):
@@ -632,6 +635,28 @@ def _gloss_degenerate(place):
     return False
 
 
+def _sandhi_forms(wn):
+    """Common sandhi variants of a headword as it may appear fused in the sloka: a
+    leading vowel elided (avagraha), and a final visarga transformed — aḥ → o
+    (saḥ → so, kālaḥ → kālo), ḥ → r/s, or dropped — plus a dropped final anusvara.
+    Excludes the base form itself (handled by the exact pass)."""
+    forms = set()
+    bases = [wn] + ([wn[1:]] if wn[:1] in "aiueo" else [])
+    for b in bases:
+        if not b:
+            continue
+        forms.add(b)
+        if b.endswith("ah"):
+            forms.update((b[:-2] + "o", b[:-2] + "ar", b[:-1] + "r", b[:-1]))
+        elif b.endswith("h"):
+            forms.update((b[:-1] + "r", b[:-1] + "s", b[:-1]))
+        if b.endswith("m"):
+            forms.add(b[:-1])
+    forms.discard(wn)
+    forms.discard("")
+    return forms
+
+
 def _edit_le1(a, b):
     """True when strings a and b are within Levenshtein distance 1 (one
     substitution, insertion, or deletion) — enough to bridge a single sandhi
@@ -722,22 +747,27 @@ def _align_glosses_oi(entries, tt, ndeva, readable):
         posn[i] = pos
         claimed.append((pos, pos + ml))
 
-    # second pass: a word still unplaced usually differs from the sloka by one
-    # sandhi character — a final consonant (yat → yad), a coalesced vowel
-    # (sa-anubandhasya → sānubandhasya) — or its only exact hit was a substring of
-    # a longer word already claimed (yat inside man·yat·e). Place it at the leftmost
-    # unclaimed span that matches within one edit.
+    # second pass: a word still unplaced has been sandhi-fused into the sloka — a
+    # final visarga changed (saḥ → so, kālaḥ → kālo, anantaḥ → 'nanto), a leading
+    # vowel elided, a coalesced vowel (sa-anubandhasya → sānubandhasya) — or its only
+    # exact hit was inside a longer word already claimed (yat inside man·yat·e). Try
+    # its sandhi variants exactly, then a 1-edit fuzzy match, and take the leftmost
+    # unclaimed span.
     for i, (w, mn, wn) in enumerate(words):
-        if posn[i] is not None or len(wn) < 3:
+        if posn[i] is not None or len(wn) < 2:
             continue
-        for L in (len(wn), len(wn) - 1, len(wn) + 1):
-            if L < 3:
-                continue
-            hit = next((p for p in range(len(glob) - L + 1)
-                        if not overlaps(p, p + L) and _edit_le1(wn, glob[p:p + L])), None)
-            if hit is not None:
-                posn[i] = hit
-                claimed.append((hit, hit + L))
+        spans = []
+        for form in _sandhi_forms(wn):                    # exact sandhi variants
+            if len(form) >= 2:
+                spans += [(p, len(form)) for p in occ(form)]
+        if len(wn) >= 4:                                  # 1-edit fuzzy of the base word
+            for L in (len(wn), len(wn) - 1, len(wn) + 1):
+                spans += [(p, L) for p in range(len(glob) - L + 1)
+                          if _edit_le1(wn, glob[p:p + L])]
+        for p, L in sorted(spans):                        # leftmost unclaimed wins
+            if not overlaps(p, p + L):
+                posn[i] = p
+                claimed.append((p, p + L))
                 break
 
     if not any(p is not None for p in posn):
@@ -779,17 +809,6 @@ def draw_glossed(new, src, pno):
             else:
                 merged.append(t)
         tt = merged
-    entries = _word_for_word(page)
-    if not entries:
-        return False
-    place = _align_glosses(entries, tt, len(deva), readable)
-    if place is None:                                # irregular pada/line structure
-        return False
-    if _gloss_degenerate(place):                     # anvaya-ordered word-for-word:
-        place = _align_glosses_oi(entries, tt, len(deva), readable)   # retry order-free
-        if _gloss_degenerate(place):                 # still wrong -> repeat stretched page
-            return False
-
     W, H = page.rect.width, page.rect.height
     xclips = [_strip_danda(page, b) for b in deva]
     ys = expand_deva(page, deva) if is_rm else deva
@@ -797,13 +816,13 @@ def draw_glossed(new, src, pno):
     sc = (W - 2 * STRETCH_MARGIN) / max(c.width for c in clips)
     verse_top = min(r.y0 for r in deva + tl)
     verse_bot = max(r.y1 for r in deva + tl)
-    # only the translation goes below — the word-for-word is redundant here (it's
-    # the glosses above). The word-for-word is a tight run of em-dash lines right
-    # after the sloka; the translation paragraph follows a blank-line gap. We can't
-    # just keep everything below the last em-dash line, because some translations
-    # themselves contain em-dashes ("… descendants of Vṛṣṇi — Bhoja … etc. — who …")
-    # — so find the word-for-word block by its tight spacing and take the paragraph
-    # after the gap.
+    # split what's below the sloka into the word-for-word block and the translation.
+    # Text-only signals (paragraph gap, em-dash, semicolons) all fail on some verse:
+    # the gap is sometimes absent (SB 8.11.23), translations can contain em-dashes
+    # (SB 1.11.11) and semicolons (SB 5.23.7), and the last word-for-word meaning can
+    # wrap onto plain roman lines (SB 1.7.12). The reliable mark is the FONT:
+    # word-for-word terms are italic transliteration, the translation is roman prose
+    # opening with a capital — the first full-width, near-all-roman line.
     below_all = [(sp["bbox"], sp["text"], bool(sp["flags"] & 2))
                  for b in page.get_text("dict")["blocks"]
                  for ln in b.get("lines", []) for sp in ln["spans"]
@@ -816,14 +835,6 @@ def draw_glossed(new, src, pno):
             L[4] += len(t) if it else 0; L[5] += len(t)
         else:
             lines.append([bb[1], t, bb[0], bb[2], len(t) if it else 0, len(t)])
-    # find where the translation starts. Text-only signals (paragraph gap, em-dash,
-    # semicolons) all fail on some verse: the gap is sometimes absent (SB 8.11.23),
-    # translations can contain em-dashes (SB 1.11.11) and semicolons (SB 5.23.7), and
-    # the last word-for-word meaning can wrap onto plain roman lines (SB 1.7.12). The
-    # reliable mark is the FONT: word-for-word terms are italic transliteration,
-    # while the translation is roman prose that opens with a capital. So the
-    # translation is the first line that starts with a capital, is full-width, and is
-    # almost all roman — skipping italic word-for-word lines and their roman wraps.
     translation_top = H
     for y0, t, x0, x1, ic, tc in lines:
         first = next((c for c in t if c.isalpha()), "")
@@ -831,6 +842,21 @@ def draw_glossed(new, src, pno):
             translation_top = y0
             break
     below = [bb for bb, t, it in below_all if bb[1] >= translation_top - 2]
+
+    # parse the word-for-word from the region between the sloka and the translation,
+    # in reading order — so a meaning that wraps onto the next line ("āvaliḥ — a /
+    # mass.") is kept whole and translation em-dashes are excluded
+    wff_text = page.get_text(clip=fitz.Rect(0, verse_bot + 1, W, translation_top - 1))
+    entries = _parse_wff(wff_text.replace("\n", " "))
+    if not entries:
+        return False
+    place = _align_glosses(entries, tt, len(deva), readable)
+    if place is None:                                # irregular pada/line structure
+        return False
+    if _gloss_degenerate(place):                     # anvaya-ordered word-for-word:
+        place = _align_glosses_oi(entries, tt, len(deva), readable)   # retry order-free
+        if _gloss_degenerate(place):                 # still wrong -> repeat stretched page
+            return False
 
     freg, fita = fitz.Font(fontfile=GLOSS_REG), fitz.Font(fontfile=GLOSS_ITA)
     GS, LH = GLOSS_SIZE, GLOSS_SIZE + 1.5
@@ -862,6 +888,14 @@ def draw_glossed(new, src, pno):
         tl_top = min(r[1] for r in below) - 2
         tl_bot = max(r[3] for r in below) + 2
 
+    # the printed word-for-word block (the source region above the translation) is
+    # reproduced verbatim at the very bottom, after the translation, for reference
+    wff_spans = [bb for bb, t, it in below_all if bb[1] < translation_top - 2]
+    wf_top = wf_bot = None
+    if wff_spans:
+        wf_top = min(r[1] for r in wff_spans) - 2
+        wf_bot = max(r[3] for r in wff_spans) + 2
+
     # a crowded verse (deep gloss stacks) can push the translation past the source
     # page height and clip it — grow the page to exactly the height the content
     # needs, so nothing is ever cut off the bottom.
@@ -870,6 +904,8 @@ def draw_glossed(new, src, pno):
         needed += (2 + 2 * maxlvl) * LH + 4 + h + VERSE_GAP
     if below:
         needed += BELOW_GAP + (tl_bot - tl_top)
+    if wf_top is not None:
+        needed += 10 + (wf_bot - wf_top)             # 10pt before the reference block
     needed += 80                                     # trailing whitespace (room to scroll)
     if needed > H:
         new.set_mediabox(fitz.Rect(0, 0, W, needed))   # before any content is placed
@@ -896,4 +932,8 @@ def draw_glossed(new, src, pno):
     if below:
         y += BELOW_GAP
         new.show_pdf_page(fitz.Rect(0, y, W, y + (tl_bot - tl_top)), src, pno, clip=fitz.Rect(0, tl_top, W, tl_bot))
+        y += tl_bot - tl_top
+    if wf_top is not None:                            # word-for-word reference block
+        y += 10                                       # 10pt below the translation
+        new.show_pdf_page(fitz.Rect(0, y, W, y + (wf_bot - wf_top)), src, pno, clip=fitz.Rect(0, wf_top, W, wf_bot))
     return True
