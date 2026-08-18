@@ -756,14 +756,35 @@ def draw_glossed(new, src, pno):
     verse_top = min(r.y0 for r in deva + tl)
     verse_bot = max(r.y1 for r in deva + tl)
     # only the translation goes below — the word-for-word is redundant here (it's
-    # the glosses above). The word-for-word block carries the em-dashes; the
-    # translation is the prose paragraph beneath it, so keep only what sits below
-    # the last em-dash line.
+    # the glosses above). The word-for-word is a tight run of em-dash lines right
+    # after the sloka; the translation paragraph follows a blank-line gap. We can't
+    # just keep everything below the last em-dash line, because some translations
+    # themselves contain em-dashes ("… descendants of Vṛṣṇi — Bhoja … etc. — who …")
+    # — so find the word-for-word block by its tight spacing and take the paragraph
+    # after the gap.
     below_all = [(sp["bbox"], sp["text"]) for b in page.get_text("dict")["blocks"]
                  for ln in b.get("lines", []) for sp in ln["spans"]
                  if sp["text"].strip() and sp["bbox"][1] > verse_bot + 1 and sp["bbox"][3] < H - 30]
-    dash_bottom = max((bb[3] for bb, t in below_all if "—" in t), default=verse_bot)
-    below = [bb for bb, t in below_all if bb[1] > dash_bottom - 1]
+    lines = []                                       # group spans into text lines by y
+    for bb, t in sorted(below_all, key=lambda s: (round(s[0][1]), s[0][0])):
+        if lines and abs(bb[1] - lines[-1][0]) <= 3:
+            lines[-1][1] = max(lines[-1][1], bb[3]); lines[-1][2] += t
+        else:
+            lines.append([bb[1], bb[3], t])
+    # the word-for-word / translation boundary is the blank-line paragraph gap, not
+    # the em-dash pattern — the word-for-word can wrap onto a continuation line with
+    # no dash, and the translation can contain dashes. Consecutive tight lines
+    # overlap (bbox y1 > next y0, so the gap is ~0 or negative); only a paragraph
+    # break opens a real positive gap. Take the first such gap after the block start.
+    start = next((i for i, ln in enumerate(lines) if "—" in ln[2]), None)
+    translation_top = H
+    if start is not None and lines:
+        lh = sorted(ln[1] - ln[0] for ln in lines)[len(lines) // 2]   # median line height
+        for i in range(start + 1, len(lines)):
+            if lines[i][0] - lines[i - 1][1] > 0.5 * lh:              # paragraph gap
+                translation_top = lines[i][0]
+                break
+    below = [bb for bb, t in below_all if bb[1] >= translation_top - 2]
 
     freg, fita = fitz.Font(fontfile=GLOSS_REG), fitz.Font(fontfile=GLOSS_ITA)
     GS, LH = GLOSS_SIZE, GLOSS_SIZE + 1.5
