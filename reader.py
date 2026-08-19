@@ -427,6 +427,7 @@ class PageView(QScrollArea):
         self.mode = "width"                    # "width" | "height" | "zoom"
         self.gloss_fit = False                 # fit the glossed page's content into the window
         self._cbot: dict[int, float] = {}      # page number -> content bottom (points), cached
+        self._scroll_pos: dict[int, int] = {}  # glossed page -> scroll, restored on return
         self._page = 1
         self._buf: np.ndarray | None = None   # QImage does not copy; keep it alive
 
@@ -505,7 +506,13 @@ class PageView(QScrollArea):
         self.render(self._page)
 
     def render(self, page: int) -> None:
-        self._page = max(1, min(page, self.doc.page_count))
+        old = self._page
+        new = max(1, min(page, self.doc.page_count))
+        # leaving a glossed page — remember how far it was scrolled, so paging back
+        # (←/→) lands where we left off instead of at the top
+        if new != old and old in self.glossed_pages:
+            self._scroll_pos[old] = self.verticalScrollBar().value()
+        self._page = new
         p = self.doc[self._page - 1]
         scale = self._scale_for(p)
 
@@ -527,7 +534,13 @@ class PageView(QScrollArea):
         qp = QPixmap.fromImage(img)
         qp.setDevicePixelRatio(dpr)
         self.label.setPixmap(qp)
-        self.verticalScrollBar().setValue(0)
+        # returning to a glossed page restores its scroll; every other page (and a
+        # same-page re-render) opens at the top. Defer once: the scrollbar's range
+        # only updates after the new pixmap lays out, so an immediate set would clamp.
+        restore = self._scroll_pos.get(new, 0) if (new != old and new in self.glossed_pages) else 0
+        self.verticalScrollBar().setValue(restore)
+        if restore:
+            QTimer.singleShot(0, lambda v=restore: self.verticalScrollBar().setValue(v))
 
     def centre_h(self) -> None:
         """Put the horizontal scroll exactly in the middle."""
