@@ -635,6 +635,14 @@ def _gloss_degenerate(place):
     return False
 
 
+def _line_balance(place):
+    """Ratio of the least-filled to most-filled Devanagari line (1.0 = even). A very
+    low value means the aligner piled most glosses onto one line while starving
+    another — a milder pile the frac-window test can miss (SB 9.24.32: [1, 11])."""
+    c = [len(x) for x in place]
+    return min(c) / max(c) if c and max(c) else 1.0
+
+
 def _sandhi_forms(wn):
     """Common sandhi variants of a headword as it may appear fused in the sloka: a
     leading vowel elided (avagraha), and a final visarga transformed — aḥ → o
@@ -857,6 +865,10 @@ def draw_glossed(new, src, pno):
         place = _align_glosses_oi(entries, tt, len(deva), readable)   # retry order-free
         if _gloss_degenerate(place):                 # still wrong -> repeat stretched page
             return False
+    elif _line_balance(place) < 0.35:                # not flagged but lopsided (piled onto
+        oi = _align_glosses_oi(entries, tt, len(deva), readable)   # one line) — prefer the
+        if oi is not None and not _gloss_degenerate(oi) and _line_balance(oi) >= 0.6:  # order-free
+            place = oi                               # result when it spreads far more evenly
 
     freg, fita = fitz.Font(fontfile=GLOSS_REG), fitz.Font(fontfile=GLOSS_ITA)
     GS, LH = GLOSS_SIZE, GLOSS_SIZE + 1.5
