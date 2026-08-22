@@ -865,12 +865,25 @@ def draw_glossed(new, src, pno):
         place = _align_glosses_oi(entries, tt, len(deva), readable)   # retry order-free
         if _gloss_degenerate(place):                 # still wrong -> repeat stretched page
             return False
-    elif _line_balance(place) < 0.6:                 # not flagged but lopsided (glosses
-        oi = _align_glosses_oi(entries, tt, len(deva), readable)   # piled toward one line) —
-        if (oi is not None and not _gloss_degenerate(oi)           # prefer the order-free
-                and sum(len(l) for l in oi) >= sum(len(l) for l in place)  # result when it
-                and _line_balance(oi) >= _line_balance(place) + 0.15):     # spreads more evenly
-            place = oi                               # without dropping any words
+    else:
+        # a lopsided main result (a verse line left empty, or glosses piled toward
+        # one line) means the aligner mis-distributed them; the order-free aligner
+        # usually spreads them better. Peel the attribution line(s), then prefer oi
+        # when it scores higher — a placed word counts +1, an empty verse line -4,
+        # so a fully blank line outweighs dropping a word or two.
+        a = max(min(leading_attributions(tt), len(deva) - 1, len(tt) - 1), 0)
+
+        def _score(pl):
+            body = [len(x) for x in pl[a:]]
+            return sum(body) - 4 * sum(1 for c in body if not c)
+
+        body = [len(x) for x in place[a:]]
+        if body and (min(body) == 0 or (max(body) and min(body) / max(body) < 0.6)):
+            oi = _align_glosses_oi(entries, tt, len(deva), readable)
+            if oi is not None and not _gloss_degenerate(oi):
+                so, sm = _score(oi), _score(place)
+                if so > sm or (so == sm and _line_balance(oi) >= _line_balance(place) + 0.15):
+                    place = oi
 
     freg, fita = fitz.Font(fontfile=GLOSS_REG), fitz.Font(fontfile=GLOSS_ITA)
     GS, LH = GLOSS_SIZE, GLOSS_SIZE + 1.5
