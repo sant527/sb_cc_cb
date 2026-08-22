@@ -865,10 +865,12 @@ def draw_glossed(new, src, pno):
         place = _align_glosses_oi(entries, tt, len(deva), readable)   # retry order-free
         if _gloss_degenerate(place):                 # still wrong -> repeat stretched page
             return False
-    elif _line_balance(place) < 0.35:                # not flagged but lopsided (piled onto
-        oi = _align_glosses_oi(entries, tt, len(deva), readable)   # one line) — prefer the
-        if oi is not None and not _gloss_degenerate(oi) and _line_balance(oi) >= 0.6:  # order-free
-            place = oi                               # result when it spreads far more evenly
+    elif _line_balance(place) < 0.6:                 # not flagged but lopsided (glosses
+        oi = _align_glosses_oi(entries, tt, len(deva), readable)   # piled toward one line) —
+        if (oi is not None and not _gloss_degenerate(oi)           # prefer the order-free
+                and sum(len(l) for l in oi) >= sum(len(l) for l in place)  # result when it
+                and _line_balance(oi) >= _line_balance(place) + 0.15):     # spreads more evenly
+            place = oi                               # without dropping any words
 
     freg, fita = fitz.Font(fontfile=GLOSS_REG), fitz.Font(fontfile=GLOSS_ITA)
     GS, LH = GLOSS_SIZE, GLOSS_SIZE + 1.5
