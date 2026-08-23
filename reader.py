@@ -419,7 +419,8 @@ class Index:
 # --------------------------------------------------------------------------
 
 class PageView(QScrollArea):
-    page_step = pyqtSignal(int)            # mouse click -> page nav (-1 prev, +1 next)
+    page_step = pyqtSignal(int)            # left/right click -> page nav (-1 prev, +1 next)
+    verse_step = pyqtSignal(int)           # middle click -> verse nav (+1 = like ↓)
 
     def __init__(self, doc: fitz.Document) -> None:
         super().__init__()
@@ -504,6 +505,8 @@ class PageView(QScrollArea):
                 self.page_step.emit(-1); return True    # ← previous page
             if ev.button() == Qt.MouseButton.RightButton:
                 self.page_step.emit(+1); return True    # → next page
+            if ev.button() == Qt.MouseButton.MiddleButton:
+                self.verse_step.emit(+1); return True   # ↓ next verse
         return super().eventFilter(obj, ev)
 
     def fit(self, mode: str) -> None:
@@ -851,7 +854,8 @@ class Reader(QMainWindow):
 
         self.view = PageView(self.doc)
         self.view.glossed_pages = self.index.glossed_pages
-        self.view.page_step.connect(self.step_page)   # mouse click -> page nav
+        self.view.page_step.connect(self.step_page)          # left/right click -> page nav
+        self.view.verse_step.connect(self.step_translation)  # middle click -> verse nav
         self.view.mode, self.view.zoom = mode, zoom
         self._apply_colour()
 
