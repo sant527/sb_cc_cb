@@ -419,6 +419,8 @@ class Index:
 # --------------------------------------------------------------------------
 
 class PageView(QScrollArea):
+    page_step = pyqtSignal(int)            # mouse click -> page nav (-1 prev, +1 next)
+
     def __init__(self, doc: fitz.Document) -> None:
         super().__init__()
         self.doc = doc
@@ -435,6 +437,10 @@ class PageView(QScrollArea):
         self.setWidget(self.label)
         self.setWidgetResizable(True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # keys stay with the window
+        # mouse: left-click pages back, right-click pages forward (like ←/→); the
+        # click lands on the label, so filter its events and drop the context menu
+        self.label.installEventFilter(self)
+        self.label.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         # hide the scrollbars; scrolling stays keyboard-driven (Up/Down, 'c')
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -491,6 +497,14 @@ class PageView(QScrollArea):
                 return max(200, self.viewport().height() - 24) / p.rect.height
             case _:
                 return self.zoom
+
+    def eventFilter(self, obj, ev):
+        if obj is self.label and ev.type() == QEvent.Type.MouseButtonPress:
+            if ev.button() == Qt.MouseButton.LeftButton:
+                self.page_step.emit(-1); return True    # ← previous page
+            if ev.button() == Qt.MouseButton.RightButton:
+                self.page_step.emit(+1); return True    # → next page
+        return super().eventFilter(obj, ev)
 
     def fit(self, mode: str) -> None:
         self.mode = mode
@@ -837,6 +851,7 @@ class Reader(QMainWindow):
 
         self.view = PageView(self.doc)
         self.view.glossed_pages = self.index.glossed_pages
+        self.view.page_step.connect(self.step_page)   # mouse click -> page nav
         self.view.mode, self.view.zoom = mode, zoom
         self._apply_colour()
 
