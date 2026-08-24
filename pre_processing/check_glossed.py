@@ -61,17 +61,13 @@ def final_place(ent, tt2, ndeva):
             return None
         return place
     a = max(min(leading_attributions(tt2), ndeva - 1, len(tt2) - 1), 0)
-
-    def score(pl):
-        body = [len(x) for x in pl[a:]]
-        return sum(body) - 4 * sum(1 for c in body if not c)
-
     body = [len(x) for x in place[a:]]
     if body and (min(body) == 0 or (max(body) and min(body) / max(body) < 0.6)):
         oi = _align_glosses_oi(ent, tt2, ndeva, readable)
         if oi is not None and not _gloss_degenerate(oi):
-            so, sm = score(oi), score(place)
-            if so > sm or (so == sm and _line_balance(oi) >= _line_balance(place) + 0.15):
+            bo = [len(x) for x in oi[a:]]
+            score = lambda b: sum(b) - (max(b) - min(b)) if b else 0
+            if score(bo) > score(body) and sum(bo) >= 0.7 * sum(body):
                 place = oi
     return place
 

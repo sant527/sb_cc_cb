@@ -869,20 +869,18 @@ def draw_glossed(new, src, pno):
         # a lopsided main result (a verse line left empty, or glosses piled toward
         # one line) means the aligner mis-distributed them; the order-free aligner
         # usually spreads them better. Peel the attribution line(s), then prefer oi
-        # when it scores higher — a placed word counts +1, an empty verse line -4,
-        # so a fully blank line outweighs dropping a word or two.
+        # when it is more even — score = words placed minus the imbalance range
+        # (max line - min line), so [6,5] (score 10) beats a piled [1,12] (score 2)
+        # even though it placed two fewer words — as long as it doesn't drop more
+        # than ~30% of the glosses.
         a = max(min(leading_attributions(tt), len(deva) - 1, len(tt) - 1), 0)
-
-        def _score(pl):
-            body = [len(x) for x in pl[a:]]
-            return sum(body) - 4 * sum(1 for c in body if not c)
-
         body = [len(x) for x in place[a:]]
         if body and (min(body) == 0 or (max(body) and min(body) / max(body) < 0.6)):
             oi = _align_glosses_oi(entries, tt, len(deva), readable)
             if oi is not None and not _gloss_degenerate(oi):
-                so, sm = _score(oi), _score(place)
-                if so > sm or (so == sm and _line_balance(oi) >= _line_balance(place) + 0.15):
+                bo = [len(x) for x in oi[a:]]
+                score = lambda b: sum(b) - (max(b) - min(b)) if b else 0
+                if score(bo) > score(body) and sum(bo) >= 0.7 * sum(body):
                     place = oi
 
     freg, fita = fitz.Font(fontfile=GLOSS_REG), fitz.Font(fontfile=GLOSS_ITA)
