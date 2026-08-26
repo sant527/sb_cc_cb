@@ -429,6 +429,8 @@ class PageView(QScrollArea):
         self.zoom = 1.0
         self.mode = "width"                    # "width" | "height" | "zoom"
         self.gloss_fit = False                 # fit the glossed page's content into the window
+        # glossed pages keep one zoom, every other page another (True=glossed key)
+        self._zstate = {c: {"mode": "width", "zoom": 1.0} for c in (True, False)}
         self._cbot: dict[int, float] = {}      # page number -> content bottom (points), cached
         self._scroll_pos: dict[int, int] = {}  # glossed page -> scroll, restored on return
         self._page = 1
@@ -509,6 +511,11 @@ class PageView(QScrollArea):
                 self.verse_step.emit(+1); return True   # ↓ next verse
         return super().eventFilter(obj, ev)
 
+    def init_zoom(self, mode: str, zoom: float) -> None:
+        """Seed both page categories (glossed / other) with the saved zoom."""
+        self.mode, self.zoom = mode, zoom
+        self._zstate = {c: {"mode": mode, "zoom": zoom} for c in (True, False)}
+
     def fit(self, mode: str) -> None:
         self.mode = mode
         self.render(self._page)
@@ -529,6 +536,12 @@ class PageView(QScrollArea):
         # (←/→) lands where we left off instead of at the top
         if new != old and old in self.glossed_pages:
             self._scroll_pos[old] = self.verticalScrollBar().value()
+        # glossed pages carry their own zoom, every other page another — crossing
+        # between the two swaps in that category's saved (fit mode, zoom)
+        og, ng = old in self.glossed_pages, new in self.glossed_pages
+        if ng != og:
+            self._zstate[og] = {"mode": self.mode, "zoom": self.zoom}
+            self.mode, self.zoom = self._zstate[ng]["mode"], self._zstate[ng]["zoom"]
         self._page = new
         p = self.doc[self._page - 1]
         scale = self._scale_for(p)
@@ -856,7 +869,7 @@ class Reader(QMainWindow):
         self.view.glossed_pages = self.index.glossed_pages
         self.view.page_step.connect(self.step_page)          # left/right click -> page nav
         self.view.verse_step.connect(self.step_translation)  # middle click -> verse nav
-        self.view.mode, self.view.zoom = mode, zoom
+        self.view.init_zoom(mode, zoom)
         self._apply_colour()
 
         # status bar: verse on the left, page counter pinned right
