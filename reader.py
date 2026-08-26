@@ -529,12 +529,17 @@ class PageView(QScrollArea):
         self.zoom = max(ZOOM_MIN, min(ZOOM_MAX, self.zoom * factor))
         self.render(self._page)
 
+    def _remembers_scroll(self, page: int) -> bool:
+        """A glossed page and the reference page right before it both keep their
+        scroll offset, so flipping between the two (←/→) resumes where you were."""
+        return page in self.glossed_pages or (page + 1) in self.glossed_pages
+
     def render(self, page: int) -> None:
         old = self._page
         new = max(1, min(page, self.doc.page_count))
-        # leaving a glossed page — remember how far it was scrolled, so paging back
-        # (←/→) lands where we left off instead of at the top
-        if new != old and old in self.glossed_pages:
+        # leaving a glossed page or its reference page — remember how far it was
+        # scrolled, so paging back (←/→) lands where we left off instead of the top
+        if new != old and self._remembers_scroll(old):
             self._scroll_pos[old] = self.verticalScrollBar().value()
         # glossed pages carry their own zoom, every other page another — crossing
         # between the two swaps in that category's saved (fit mode, zoom)
@@ -567,7 +572,7 @@ class PageView(QScrollArea):
         # returning to a glossed page restores its scroll; every other page (and a
         # same-page re-render) opens at the top. Defer once: the scrollbar's range
         # only updates after the new pixmap lays out, so an immediate set would clamp.
-        restore = self._scroll_pos.get(new, 0) if (new != old and new in self.glossed_pages) else 0
+        restore = self._scroll_pos.get(new, 0) if (new != old and self._remembers_scroll(new)) else 0
         self.verticalScrollBar().setValue(restore)
         if restore:
             QTimer.singleShot(0, lambda v=restore: self.verticalScrollBar().setValue(v))
